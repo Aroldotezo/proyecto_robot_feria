@@ -1,14 +1,9 @@
-# Interfaz grafica. Usar PySide6 (LGPL-3.0); NO sustituir por PyQt6 (GPL/comercial).
+# Interfaz gráfica (LGPL-3.0). NO sustituir por PyQt6.
 PySide6>=6.7
 
-# Vision. Version "headless" para no traer un segundo Qt que choque con PySide6.
+# Cámara. Versión "headless" para no traer un segundo Qt que choque con PySide6.
 opencv-python-headless>=4.9
 numpy>=1.26
 
-# Comunicacion con el Arduino
+# Comunicación con el Arduino
 pyserial>=3.5
-
-# Detector YOLO (AGPL-3.0, ver THIRD_PARTY_LICENSES.md)
-ultralytics>=8.3
-
-# Cuando todo funcione, congela versiones exactas con: pip freeze > requirements.lock.txt

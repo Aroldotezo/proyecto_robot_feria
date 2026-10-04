@@ -8,3 +8,7 @@ class DisconnectedArmException(ArmErrorException):
 
 class ArmTimeoutException(ArmErrorException):
     """El brazo no confirmo el movimiento (DONE) a tiempo."""
+
+
+class CameraErrorException(Exception):
+    """La camara no pudo ser abierta o esta siendo bloqueada por otra aplicacion."""

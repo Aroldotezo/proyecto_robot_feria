@@ -5,6 +5,18 @@ mediante visión por computadora y controla un brazo robótico de 6 servos a tra
 
 > Proyecto academico en desarrollo.
 
+
+## Ejecutar
+
+1. Instala Python 3.11 o 3.12 (en Windows, marca "Add python.exe to PATH").
+   En Linux (Debian/Ubuntu): `sudo apt install python3 python3-venv libxcb-cursor0`
+2. Doble clic en `run.bat` (Windows) o `./run.sh` (Linux; antes `chmod +x run.sh`).
+
+La primera vez crea el entorno e instala las dependencias (tarda unos minutos).
+Sin hardware: `run.bat --simulate` / `./run.sh --simulate`.
+
+En Linux, para acceder al puerto serie del Arduino: `sudo usermod -aG dialout $USER` (cerrar sesión y volver a entrar).
+
 ## Instalación
 
 Requiere Python 3.11 o 3.12.

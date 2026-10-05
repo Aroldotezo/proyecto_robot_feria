@@ -3,7 +3,11 @@ setlocal
 
 cd /d "%~dp0"
 
-echo [setup] Checking Python...
+echo ========================================
+echo       CONTROL DEL BRAZO ROBOTICO
+echo ========================================
+echo.
+echo [setup] Buscando Python...
 
 where py >nul 2>&1
 if %errorlevel% equ 0 (
@@ -18,46 +22,57 @@ if %errorlevel% equ 0 (
 )
 
 echo.
-echo [ERROR] Python is not installed.
-echo Please install Python 3.11 or newer.
+echo [ERROR] Python no esta instalado.
+echo Instala Python 3.11 o una version posterior.
 echo.
 pause
 exit /b 1
 
 :python_found
 
+echo [setup] Python encontrado.
+echo.
+
 if not exist ".venv\Scripts\python.exe" (
-    echo [setup] Creating virtual environment...
+    echo [setup] Creando entorno virtual...
     %PYTHON% -m venv .venv
 
     if errorlevel 1 (
         echo.
-        echo [ERROR] Could not create the virtual environment.
+        echo [ERROR] No se pudo crear el entorno virtual.
         echo.
         pause
         exit /b 1
     )
+
+    echo [setup] Entorno virtual creado.
+    echo.
 )
 
-echo [setup] Checking dependencies...
+echo [setup] Comprobando dependencias...
+echo [setup] Esto puede tardar unos minutos la primera vez.
+echo.
 
-".venv\Scripts\python.exe" -m pip install --quiet --disable-pip-version-check -r requirements.txt
+".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
 
 if errorlevel 1 (
     echo.
-    echo [ERROR] Dependency installation failed.
+    echo [ERROR] Fallo la instalacion de dependencias.
     echo.
     pause
     exit /b 1
 )
 
-echo [setup] Starting application...
+echo.
+echo [setup] Dependencias listas.
+echo [setup] Iniciando aplicacion...
+echo.
 
 ".venv\Scripts\python.exe" -m robotic_arm %*
 
 if errorlevel 1 (
     echo.
-    echo [ERROR] Application exited with an error.
+    echo [ERROR] La aplicacion termino con un error.
     echo.
     pause
 )

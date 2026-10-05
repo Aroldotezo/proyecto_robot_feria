@@ -1,7 +1,7 @@
 import cv2
 
 from robotic_arm.adapters.opencv_backend import preferred_backend
-from robotic_arm.domain.camera_info import CameraInfo
+from robotic_arm.domain.camera.camera_info import CameraInfo
 from robotic_arm.ports.camera_scanner import CameraScanner
 
 MAX_PROBED_INDEXES = 5

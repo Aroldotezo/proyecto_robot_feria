@@ -1,7 +1,7 @@
 from collections.abc import Callable
 
-from robotic_arm.domain.arm_position import ArmPosition
-from robotic_arm.domain.errors import DisconnectedArmException
+from robotic_arm.domain.camera.arm_position import ArmPosition
+from robotic_arm.domain.exceptions.errors import DisconnectedArmException
 from robotic_arm.ports.arm_controller import ArmController
 
 

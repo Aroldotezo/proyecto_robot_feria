@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from robotic_arm.domain.camera_info import CameraInfo
+from robotic_arm.domain.camera.camera_info import CameraInfo
 
 
 class CameraScanner(ABC):

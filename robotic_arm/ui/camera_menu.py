@@ -2,7 +2,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QWidget
 
-from robotic_arm.domain.camera_info import CameraInfo
+from robotic_arm.domain.camera.camera_info import CameraInfo
 
 
 class CameraMenu(QMenu):

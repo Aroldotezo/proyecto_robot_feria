@@ -3,8 +3,8 @@ import time
 
 import serial
 
-from robotic_arm.domain.arm_position import ArmPosition
-from robotic_arm.domain.errors import (
+from robotic_arm.domain.camera.arm_position import ArmPosition
+from robotic_arm.domain.exceptions.errors import (
     ArmErrorException,
     ArmTimeoutException,
     DisconnectedArmException,

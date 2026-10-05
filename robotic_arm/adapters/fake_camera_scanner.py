@@ -1,4 +1,4 @@
-from robotic_arm.domain.camera_info import CameraInfo
+from robotic_arm.domain.camera.camera_info import CameraInfo
 from robotic_arm.ports.camera_scanner import CameraScanner
 
 

@@ -5,7 +5,7 @@ import numpy as np
 from numpy.typing import NDArray
 from PySide6.QtCore import QObject, QThread, Signal
 
-from robotic_arm.domain.errors import CameraErrorException
+from robotic_arm.domain.exceptions.errors import CameraErrorException
 from robotic_arm.ports.frame_source import FrameSource
 
 

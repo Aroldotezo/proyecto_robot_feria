@@ -3,7 +3,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from robotic_arm.adapters.opencv_backend import preferred_backend
-from robotic_arm.domain.errors import CameraErrorException
+from robotic_arm.domain.exceptions.errors import CameraErrorException
 from robotic_arm.ports.frame_source import FrameSource
 
 

@@ -12,3 +12,11 @@ class ArmTimeoutException(ArmErrorException):
 
 class CameraErrorException(Exception):
     """La camara no pudo ser abierta o esta siendo bloqueada por otra aplicacion."""
+
+
+class CalibrationException(Exception):
+    """La calibracion fue olvidada, incompleta o inconsistente."""
+
+
+class ProfileNotFoundException(Exception):
+    """El perfil de clasificacion no existe."""

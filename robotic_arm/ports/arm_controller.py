@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from robotic_arm.domain.arm_position import ArmPosition
+from robotic_arm.domain.camera.arm_position import ArmPosition
 
 MIN_SPEED = 0
 MAX_SPEED = 100

@@ -1,7 +1,7 @@
 from collections.abc import Callable
 
-from robotic_arm.domain.arm_position import ArmPosition
-from robotic_arm.domain.errors import DisconnectedArmException
+from robotic_arm.domain.camera.arm_position import ArmPosition
+from robotic_arm.domain.exceptions.errors import DisconnectedArmException
 from robotic_arm.ports.arm_controller import ArmController
 
 
@@ -37,7 +37,7 @@ class ArmService:
         self._require_arm().assign_speed(speed)
 
     def move_to_rest(self) -> None:
-        self._require_arm().move_to(ArmPosition.rest())
+        self._require_arm().move_to(ArmPosition.repose())
 
     def _require_arm(self) -> ArmController:
         if self._arm is None:

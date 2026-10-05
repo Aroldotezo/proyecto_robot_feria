@@ -72,7 +72,7 @@ class ConnectionController(QObject):
     def _test_connection(self) -> None:
         self._run(
             task=self._service.move_to_rest,
-            busy_message="Moving to rest position...",
+            busy_message="Moviendo a la posicion inicial...",
             on_success=lambda _: self.status_message.emit("El brazo alcanzo su posicion base: coneccion OK"),
         )
 

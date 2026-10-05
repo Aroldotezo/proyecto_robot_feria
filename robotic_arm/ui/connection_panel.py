@@ -23,7 +23,7 @@ class ConnectionPanel(QWidget):
         self._ports.setPlaceholderText("Ningun puerto encontrado")
         self._refresh_button = QPushButton("Refrescar")
         self._connect_button = QPushButton("Conectar")
-        self._test_button = QPushButton("Mover a posicion inicial (test)")
+        self._test_button = QPushButton("Mover a posicion inicial")
         self._test_button.setToolTip("Mover todos los servo a 90 grados. Mantener el area limpia.")
         self._speed_slider = QSlider(Qt.Orientation.Horizontal)
         self._speed_slider.setRange(MIN_SPEED, MAX_SPEED)

@@ -1,8 +1,8 @@
 import logging
 import time
 
-from robotic_arm.domain.arm_position import ArmPosition
-from robotic_arm.domain.errors import DisconnectedArmException
+from robotic_arm.domain.camera.arm_position import ArmPosition
+from robotic_arm.domain.exceptions.errors import DisconnectedArmException
 from robotic_arm.ports.arm_controller import MAX_SPEED, MIN_SPEED, ArmController
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 import cv2
 
 from robotic_arm.adapters.opencv_backend import preferred_backend
-from robotic_arm.domain.camera_info import CameraInfo
+from robotic_arm.domain.camera.camera_info import CameraInfo
 from robotic_arm.ports.camera_scanner import CameraScanner
 
 MAX_PROBED_INDEXES = 5
@@ -16,7 +16,7 @@ class OpenCvCameraScanner(CameraScanner):
             capture = cv2.VideoCapture(index, preferred_backend())
             try:
                 if capture.isOpened() and capture.read()[0]:
-                    cameras.append(CameraInfo(index=index, label=f"Camera {index}"))
+                    cameras.append(CameraInfo(index=index, label=f"Camara {index}"))
             finally:
                 capture.release()
         return cameras

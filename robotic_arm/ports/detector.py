@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 
-from robotic_arm.domain.detection import Detection
+from robotic_arm.domain.camera.detection import Detection
 
 
 class Detector(ABC):

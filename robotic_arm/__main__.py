@@ -8,20 +8,29 @@ from robotic_arm.adapters.fake_arm import FakeArm
 from robotic_arm.adapters.fake_camera import FakeCamera
 from robotic_arm.adapters.fake_camera_scanner import FakeCameraScanner
 from robotic_arm.adapters.fake_port_scanner import FakePortScanner
+from robotic_arm.adapters.in_memory_profile_repository import InMemoryProfileRepository
 from robotic_arm.adapters.opencv_camera import OpenCvCamera
 from robotic_arm.adapters.opencv_camera_scanner import OpenCvCameraScanner
 from robotic_arm.adapters.serial_arm import SerialArm
 from robotic_arm.adapters.serial_port_scanner import SerialPortScanner
 from robotic_arm.application.arm_service import ArmService
+from robotic_arm.application.calibration_service import CalibrationService
+from robotic_arm.application.default_profile import create_default_profile, create_demo_profile
+from robotic_arm.application.motion_planner import MotionPlanner
 from robotic_arm.ui.main_window import MainWindow
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Brazo robotico evaluador")
-    parser.add_argument("--simulate", action="store_true", help="simulated arm and camera (no hardware needed)")
+    parser = argparse.ArgumentParser(description="Robotic arm sorter")
+    parser.add_argument("--simulate", action="store_true", help="simulated arm and camera, demo calibration (no hardware needed)")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
+
+    profile = create_demo_profile() if args.simulate else create_default_profile()
+    repository = InMemoryProfileRepository([profile])  # swap for a SQLite repository later
+    calibration_service = CalibrationService(repository, profile.name)
+    motion_planner = MotionPlanner(calibration_service)
 
     if args.simulate:
         arm_service = ArmService(arm_factory=FakeArm)
@@ -35,7 +44,7 @@ def main() -> int:
         camera_factory = OpenCvCamera
 
     app = QApplication(sys.argv)
-    window = MainWindow(arm_service, port_scanner, camera_scanner, camera_factory)
+    window = MainWindow(arm_service, port_scanner, camera_scanner, camera_factory, calibration_service, motion_planner)
     window.show()
     return app.exec()
 

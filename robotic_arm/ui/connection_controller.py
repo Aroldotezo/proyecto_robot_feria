@@ -35,7 +35,7 @@ class ConnectionController(QObject):
     def refresh_ports(self) -> None:
         ports = self._scanner.scan()
         self._panel.set_ports(ports)
-        self.status_message.emit(f"{len(ports)} serial port(s) found")
+        self.status_message.emit(f"{len(ports)} puertos de entrada encontrados")
 
     def shutdown(self) -> None:
         try:
@@ -49,40 +49,40 @@ class ConnectionController(QObject):
         speed = self._panel.speed
         self._run(
             task=lambda: self._service.connect(port, speed),
-            busy_message=f"Connecting to {port}...",
+            busy_message=f"Conectado a {port}...",
             on_success=lambda _: self._after_connect(port),
         )
 
     def _disconnect(self) -> None:
         self._run(
             task=self._service.disconnect,
-            busy_message="Disconnecting...",
+            busy_message="Desconectando...",
             on_success=lambda _: self._after_disconnect(),
         )
 
     def _change_speed(self, speed: int) -> None:
         if not self._service.connected:
-            return  # la velocidad seleccionada es excesiva
+            return  
         self._run(
             task=lambda: self._service.assign_speed(speed),
             busy_message=f"Setting speed to {speed}...",
-            on_success=lambda _: self.status_message.emit(f"Speed set to {speed}"),
+            on_success=lambda _: self.status_message.emit(f"Velocidad asingada a {speed}"),
         )
 
     def _test_connection(self) -> None:
         self._run(
             task=self._service.move_to_rest,
             busy_message="Moving to rest position...",
-            on_success=lambda _: self.status_message.emit("Arm reached the rest position: connection OK"),
+            on_success=lambda _: self.status_message.emit("El brazo alcanzo su posicion base: coneccion OK"),
         )
 
     def _after_connect(self, port: str) -> None:
         self._panel.set_connected(True)
-        self.status_message.emit(f"Connected to {port}")
+        self.status_message.emit(f"Conectado a {port}")
 
     def _after_disconnect(self) -> None:
         self._panel.set_connected(False)
-        self.status_message.emit("Disconnected")
+        self.status_message.emit("Desconectado")
 
     # ------------------------------------------------------------------ background tasks
 
@@ -108,5 +108,5 @@ class ConnectionController(QObject):
         self._on_success = None
         self._panel.set_busy(False)
         self._panel.set_connected(self._service.connected)
-        self.status_message.emit("Operation failed")
+        self.status_message.emit("Operacion fallida")
         self.error_occurred.emit(message)

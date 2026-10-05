@@ -7,3 +7,6 @@ numpy>=1.26
 
 # Comunicación con el Arduino
 pyserial>=3.5
+
+
+ultralytics>=8.3  # AGPL-3.0, ver THIRD_PARTY_LICENSES.md

@@ -32,7 +32,7 @@ class MainWindow(QMainWindow):
         motion_planner: MotionPlanner,
     ) -> None:
         super().__init__()
-        self.setWindowTitle("Robotic Arm Sorter")
+        self.setWindowTitle("Brazo robotico clasificador")
         self.resize(1280, 760)
 
         video_view = VideoView()
@@ -43,8 +43,8 @@ class MainWindow(QMainWindow):
 
         connection_panel = ConnectionPanel()
         calibration_panel = CalibrationPanel()
-        connection_dock = self._add_dock("Arm connection", connection_panel)
-        calibration_dock = self._add_dock("Calibration", self._scrollable(calibration_panel))
+        connection_dock = self._add_dock("Conexion con el brazo", connection_panel)
+        calibration_dock = self._add_dock("Calibracion", self._scrollable(calibration_panel))
         self.tabifyDockWidget(connection_dock, calibration_dock)
         connection_dock.raise_()
 

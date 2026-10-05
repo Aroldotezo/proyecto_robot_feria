@@ -23,49 +23,49 @@ from PySide6.QtWidgets import (
 from robotic_arm.domain.arm_heights import ArmHeights
 from robotic_arm.domain.motion_step import MotionStep
 from robotic_arm.domain.reference_point import ReferencePoint
-
 COORDINATE_LIMIT_MM = 2000.0
 HEIGHT_MIN_MM = -500.0
 HEIGHT_MAX_MM = 1000.0
-ADD_TEXT = "Add point (click on video)"
-CANCEL_TEXT = "Click on the video... (cancel)"
+ADD_TEXT = "Agregar punto (Haz click sobre el video)"
+CANCEL_TEXT = "Haz click sobre el video... (cancelar)"
 HINT = (
-    "Click 'Add point', then click a known spot on the video and type that spot's position in the arm frame "
-    "(mm): origin at the base axis, +X forward, +Y left. Use 4 points or more, spread over the work area "
-    "(with 5 or more, the RMS error reveals a wrong value)."
+    "Presiona 'Agregar punto', luego haz click en un punto conocido del video e ingresa la posicion de ese punto "
+    "en el sistema de coordenadas del brazo (mm): origen en el eje de la base, +X hacia adelante, +Y hacia la izquierda. "
+    "Usa 4 puntos o mas, distribuidos por toda el area de trabajo "
+    "(con 5 o mas, el error RMS permite detectar un valor incorrecto)."
 )
 
 
 class CalibrationPanel(QWidget):
-    """View only: reference-point table, heights and a sequence preview. Knows nothing about services."""
+    """Vista solamente: tabla de puntos de referencia, alturas y vista previa de una secuencia. No conoce los servicios."""
 
-    add_point_toggled = Signal(bool)  # True: waiting for a click on the video
+    add_point_toggled = Signal(bool)  # True: esperando un click sobre el video
     remove_point_requested = Signal(int)
     clear_points_requested = Signal()
-    arm_point_edited = Signal(int, float, float)  # row, arm x, arm y
+    arm_point_edited = Signal(int, float, float)  # fila, x del brazo, y del brazo
     heights_changed = Signal(float, float, float)  # z_safe, z_pick, z_drop
-    preview_requested = Signal(str)  # category id
+    preview_requested = Signal(str)  # id de categoria
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._table = QTableWidget(0, 5)
         self._add_button = QPushButton(ADD_TEXT)
-        self._remove_button = QPushButton("Remove selected")
-        self._clear_button = QPushButton("Clear all")
+        self._remove_button = QPushButton("Eliminar seleccionado")
+        self._clear_button = QPushButton("Eliminar todos")
         self._status_label = QLabel()
         self._z_safe = self._height_box()
         self._z_pick = self._height_box()
         self._z_drop = self._height_box()
-        self._test_point_label = QLabel("Click on the video to choose a test point")
+        self._test_point_label = QLabel("Haz click sobre el video para elegir un punto de prueba")
         self._destination_combo = QComboBox()
-        self._preview_button = QPushButton("Preview pick and place sequence")
+        self._preview_button = QPushButton("Vista previa de la secuencia de recoger y colocar")
         self._plan_output = QPlainTextEdit()
 
         self._configure_widgets()
         self._build_layout()
         self._wire_signals()
 
-    # ------------------------------------------------------------------ API for the controller
+    # ------------------------------------------------------------------ API para el controlador
 
     def set_reference_points(self, points: Sequence[ReferencePoint]) -> None:
         self._table.setRowCount(len(points))
@@ -87,7 +87,7 @@ class CalibrationPanel(QWidget):
             box.blockSignals(False)
 
     def set_destinations(self, items: Sequence[tuple[str, str]]) -> None:
-        """(label, category id) pairs."""
+        """Pares (etiqueta, id de categoria)."""
         self._destination_combo.clear()
         for label, category_id in items:
             self._destination_combo.addItem(label, category_id)
@@ -107,10 +107,10 @@ class CalibrationPanel(QWidget):
     def show_plan_message(self, text: str) -> None:
         self._plan_output.setPlainText(text)
 
-    # ------------------------------------------------------------------ construction
+    # ------------------------------------------------------------------ construccion
 
     def _configure_widgets(self) -> None:
-        self._table.setHorizontalHeaderLabels(["#", "Image X", "Image Y", "Arm X (mm)", "Arm Y (mm)"])
+        self._table.setHorizontalHeaderLabels(["#", "Imagen X", "Imagen Y", "Brazo X (mm)", "Brazo Y (mm)"])
         header = self._table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -134,24 +134,24 @@ class CalibrationPanel(QWidget):
         buttons.addWidget(self._remove_button)
         buttons.addWidget(self._clear_button)
 
-        points_box = QGroupBox("Reference points")
+        points_box = QGroupBox("Puntos de referencia")
         points_layout = QVBoxLayout(points_box)
         points_layout.addWidget(hint)
         points_layout.addWidget(self._table)
         points_layout.addLayout(buttons)
         points_layout.addWidget(self._status_label)
 
-        heights_box = QGroupBox("Heights (mm, +Z up)")
+        heights_box = QGroupBox("Alturas (mm, +Z hacia arriba)")
         heights_form = QFormLayout(heights_box)
-        heights_form.addRow("Z_SAFE (travel)", self._z_safe)
-        heights_form.addRow("Z_PICK (grasp)", self._z_pick)
-        heights_form.addRow("Z_DROP (release)", self._z_drop)
+        heights_form.addRow("Z_SAFE (desplazamiento)", self._z_safe)
+        heights_form.addRow("Z_PICK (recogida)", self._z_pick)
+        heights_form.addRow("Z_DROP (liberacion)", self._z_drop)
 
         destination_row = QHBoxLayout()
-        destination_row.addWidget(QLabel("Destination"))
+        destination_row.addWidget(QLabel("Destino"))
         destination_row.addWidget(self._destination_combo, stretch=1)
 
-        test_box = QGroupBox("Test")
+        test_box = QGroupBox("Prueba")
         test_layout = QVBoxLayout(test_box)
         test_layout.addWidget(self._test_point_label)
         test_layout.addLayout(destination_row)
@@ -172,7 +172,7 @@ class CalibrationPanel(QWidget):
         for box in (self._z_safe, self._z_pick, self._z_drop):
             box.valueChanged.connect(self._emit_heights_changed)
 
-    # ------------------------------------------------------------------ internals
+    # ------------------------------------------------------------------ internos
 
     @staticmethod
     def _height_box() -> QDoubleSpinBox:
@@ -188,7 +188,7 @@ class CalibrationPanel(QWidget):
         box.setRange(-COORDINATE_LIMIT_MM, COORDINATE_LIMIT_MM)
         box.setDecimals(1)
         box.setKeyboardTracking(False)
-        box.setValue(value)  # set before connecting so building the table emits nothing
+        box.setValue(value)  # establecer antes de conectar para que construir la tabla no emita nada
         box.valueChanged.connect(lambda _value, row=row: self._emit_arm_point_edited(row))
         return box
 
@@ -216,7 +216,7 @@ class CalibrationPanel(QWidget):
             self.remove_point_requested.emit(row)
 
     def _on_clear_clicked(self) -> None:
-        answer = QMessageBox.question(self, "Clear reference points", "Remove all reference points?")
+        answer = QMessageBox.question(self, "Eliminar puntos de referencia", "¿Eliminar todos los puntos de referencia?")
         if answer == QMessageBox.StandardButton.Yes:
             self.clear_points_requested.emit()
 

@@ -105,7 +105,7 @@ class CameraController(QObject):
         if self.sender() is not self._stream or self._frame_size is None:
             return
         width, height = self._frame_size
-        self.camera_info.emit(f"Camera {self._active_index} | {width}x{height} | {fps:.0f} fps")
+        self.camera_info.emit(f"Camara {self._active_index} | {width}x{height} | {fps:.0f} fps")
 
     @Slot(str)
     def _on_stream_failed(self, message: str) -> None:

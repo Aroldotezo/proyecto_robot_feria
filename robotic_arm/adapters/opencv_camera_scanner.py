@@ -16,7 +16,7 @@ class OpenCvCameraScanner(CameraScanner):
             capture = cv2.VideoCapture(index, preferred_backend())
             try:
                 if capture.isOpened() and capture.read()[0]:
-                    cameras.append(CameraInfo(index=index, label=f"Camera {index}"))
+                    cameras.append(CameraInfo(index=index, label=f"Camara {index}"))
             finally:
                 capture.release()
         return cameras

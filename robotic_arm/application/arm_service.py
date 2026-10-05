@@ -37,7 +37,7 @@ class ArmService:
         self._require_arm().assign_speed(speed)
 
     def move_to_rest(self) -> None:
-        self._require_arm().move_to(ArmPosition.rest())
+        self._require_arm().move_to(ArmPosition.repose())
 
     def _require_arm(self) -> ArmController:
         if self._arm is None:

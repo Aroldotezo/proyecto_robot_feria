@@ -6,8 +6,6 @@ from robotic_arm.domain.geometry import NormalizedPoint, NormalizedRect
 from robotic_arm.domain.reference_point import ReferencePoint
 from robotic_arm.domain.zone import Zone, ZoneRole
 
-# Demo only: arm at the top edge of the image looking down, so +X (forward) is down in the image
-# and +Y (left of the arm) is to the right in the image.
 _DEMO_REFERENCE_POINTS = (
     ReferencePoint(NormalizedPoint(0.1, 0.1), ArmPoint(120.0, -150.0)),
     ReferencePoint(NormalizedPoint(0.9, 0.1), ArmPoint(120.0, 150.0)),

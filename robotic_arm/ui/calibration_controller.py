@@ -133,5 +133,5 @@ class CalibrationController(QObject):
         try:
             arm = self._service.image_to_arm(point)
         except CalibrationException:
-            return f"image ({point.x:.3f}, {point.y:.3f}) | {zone_text} | not calibrated"
+            return f"imagen ({point.x:.3f}, {point.y:.3f}) | {zone_text} | no calibrada"
         return f"Arm X {arm.x:.1f}  Y {arm.y:.1f} mm | {zone_text}"

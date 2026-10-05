@@ -1,0 +1,13 @@
+# Environment and cache
+.venv/
+__pycache__/
+*.pyc
+
+# Models and datasets 
+*.pt
+*.onnx
+models/
+datasets/
+
+# Local database
+*.db

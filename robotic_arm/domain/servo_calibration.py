@@ -23,7 +23,7 @@ class ServoCalibration:
         if self.direction not in (-1, 1):
             raise ValueError("La direccion debe ser entre +1 or -1")
         if not 0.0 <= self.min_angle <= self.max_angle <= 180.0:
-            raise ValueError("El rango debe satisfacer la condicion 0 <= angulo minimo <= angulo maximo <= 180")
+            raise ValueError("El rango debe satisfacer la condicion: 0 <= angulo minimo <= angulo maximo <= 180")
 
     def to_servo(self, mathematical_angle: float) -> float:
         return self.offset + self.direction * mathematical_angle

@@ -20,3 +20,7 @@ class CalibrationException(Exception):
 
 class ProfileNotFoundException(Exception):
     """El perfil de clasificacion no existe."""
+
+
+class ProfileStorageException(Exception):
+    """El perfil de puntos seleccionado no puede ser cargado o escrito."""

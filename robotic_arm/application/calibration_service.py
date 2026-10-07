@@ -70,8 +70,9 @@ class CalibrationService:
         return CalibrationStatus(True, count, f"Calibrados: {count} puntos, RMS error {self._calibration.rms_error:.1f} mm")
 
     def _update(self, **changes: object) -> None:
-        self._profile = replace(self._profile, **changes)
-        self._repository.save(self._profile)
+        updated = replace(self._profile, **changes)
+        self._repository.save(updated)
+        self._profile = updated
         self._rebuild()
 
     def _rebuild(self) -> None:

@@ -20,6 +20,9 @@ from robotic_arm.ui.connection_panel import ConnectionPanel
 from robotic_arm.ui.video_view import VideoView
 from robotic_arm.ui.zone_overlay import ZoneOverlay
 
+from robotic_arm.ui.waypoint_controller import WaypointController
+from robotic_arm.ui.waypoint_panel import WaypointPanel
+
 
 class MainWindow(QMainWindow):
     def __init__(
@@ -43,13 +46,19 @@ class MainWindow(QMainWindow):
 
         connection_panel = ConnectionPanel()
         calibration_panel = CalibrationPanel()
+        waypoint_panel = WaypointPanel()
+
         connection_dock = self._add_dock("Conexion con el brazo", connection_panel)
         calibration_dock = self._add_dock("Calibracion", self._scrollable(calibration_panel))
+        waypoint_dock = self._add_dock("Prueba de coordenadas", self._scrollable(waypoint_panel))
+
         self.tabifyDockWidget(connection_dock, calibration_dock)
+        self.tabifyDockWidget(calibration_dock, waypoint_dock)
         connection_dock.raise_()
 
         self._connection_controller = ConnectionController(connection_panel, arm_service, port_scanner, parent=self)
         self._camera_controller = CameraController(camera_menu, video_view, camera_scanner, camera_factory, parent=self)
+        self._waypoint_controller = WaypointController(waypoint_panel, arm_service, parent=self)
         self._calibration_controller = CalibrationController(
             calibration_panel,
             calibration_service,

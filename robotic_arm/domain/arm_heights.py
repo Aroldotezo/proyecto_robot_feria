@@ -5,9 +5,9 @@ from dataclasses import dataclass
 class ArmHeights:
     """Se debe colocar el encuadre en zona, la vision no se mueve: Ajusta el espacio fisico."""
 
-    z_safe: float = 80.0 
+    z_safe: float = 50.0 
     z_pick: float = 10.0   
-    z_drop: float = 40.0  
+    z_drop: float = 35.0  
 
     def __post_init__(self) -> None:
         if self.z_safe < max(self.z_pick, self.z_drop):

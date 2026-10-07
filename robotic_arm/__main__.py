@@ -23,6 +23,8 @@ from robotic_arm.application.motion_planner import MotionPlanner
 from robotic_arm.domain.exceptions.errors import ProfileStorageException
 from robotic_arm.ports.profile_repository import ProfileRepository
 from robotic_arm.ui.main_window import MainWindow
+from robotic_arm.application.default_arm_model import create_default_arm_model
+from robotic_arm.domain.arm_kinematics import ArmKinematics
 
 DATABASE_FILE = "profiles.db"
 
@@ -63,28 +65,43 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO)
     app = QApplication(sys.argv)
 
+    kinematics = ArmKinematics(create_default_arm_model())
+
+    if args.simulate or args.fake_arm:
+        arm_service, port_scanner = (
+            ArmService(arm_factory=FakeArm, kinematics=kinematics),
+            FakePortScanner(),
+        )
+    else:
+        arm_service, port_scanner = (
+            ArmService(arm_factory=SerialArm, kinematics=kinematics),
+            SerialPortScanner(),
+        )
+
     try:
         repository, profile_name = open_profiles(args)
         calibration_service = CalibrationService(repository, profile_name)
     except ProfileStorageException as e:
         QMessageBox.critical(None, "Error", str(e))
         return 1
-    motion_planner = MotionPlanner(calibration_service)
 
-    if args.simulate or args.fake_arm:
-        arm_service, port_scanner = ArmService(arm_factory=FakeArm), FakePortScanner()
-    else:
-        arm_service, port_scanner = ArmService(arm_factory=SerialArm), SerialPortScanner()
+    motion_planner = MotionPlanner(calibration_service)
 
     if args.simulate:
         camera_scanner, camera_factory = FakeCameraScanner(), FakeCamera
     else:
         camera_scanner, camera_factory = OpenCvCameraScanner(), OpenCvCamera
 
-    window = MainWindow(arm_service, port_scanner, camera_scanner, camera_factory, calibration_service, motion_planner)
+    window = MainWindow(
+        arm_service,
+        port_scanner,
+        camera_scanner,
+        camera_factory,
+        calibration_service,
+        motion_planner,
+    )
     window.show()
     return app.exec()
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -24,3 +24,15 @@ class ProfileNotFoundException(Exception):
 
 class ProfileStorageException(Exception):
     """El perfil de puntos seleccionado no puede ser cargado o escrito."""
+
+
+class InverseKinematicsException(Exception):
+    """El punto cartesiano la posicion propuesta no es segura para el servomotor."""
+
+
+class UnreachablePointException(InverseKinematicsException):
+    """Punto fuera del area de trabajo: esta en una zona no mapeada del brazo."""
+
+
+class JointLimitException(InverseKinematicsException):
+    """Punto calculable matematicamente pero necesita estar dentro de la zona optima."""

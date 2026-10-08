@@ -26,6 +26,14 @@ class YoloDetector(Detector):
         self._model = YOLO(str(model_path))
         self._confidence = confidence
 
+    @property
+    def confidence(self) -> float:
+        return self._confidence
+
+    @confidence.setter
+    def confidence(self, value: float) -> None:
+        self._confidence = max(0.0, min(1.0, value))
+
     def detect(self, frame: NDArray[np.uint8]) -> list[Detection]:
         results = self._model.predict(
             source=frame,

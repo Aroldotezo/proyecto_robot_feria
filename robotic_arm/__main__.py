@@ -16,6 +16,7 @@ from robotic_arm.adapters.opencv_camera_scanner import OpenCvCameraScanner
 from robotic_arm.adapters.serial_arm import SerialArm
 from robotic_arm.adapters.serial_port_scanner import SerialPortScanner
 from robotic_arm.adapters.sqlite_profile_repository import SqliteProfileRepository
+from robotic_arm.adapters.yolo_detector import YoloDetector
 
 from robotic_arm.application.arm_service import ArmService
 from robotic_arm.application.calibration_service import CalibrationService
@@ -29,6 +30,7 @@ from robotic_arm.ui.main_window import MainWindow
 
 
 DATABASE_FILE = "profiles.db"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "best.pt"
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -49,6 +51,23 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="profiles database file (default: per-user data folder)",
     )
+    parser.add_argument(
+        "--no-yolo",
+        action="store_true",
+        help="disable YOLO detection (useful when no GPU or model is unavailable)",
+    )
+    parser.add_argument(
+        "--yolo-conf",
+        type=float,
+        default=0.5,
+        help="YOLO confidence threshold (default: 0.5)",
+    )
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=None,
+        help="path to the YOLO model weights (default: models/best.pt)",
+    )
     return parser.parse_args()
 
 
@@ -67,6 +86,21 @@ def open_profiles(args: argparse.Namespace) -> tuple[ProfileRepository, str]:
 
     logging.info("Profiles stored in %s", path)
     return repository, default.name
+
+
+def create_detector(args: argparse.Namespace):
+    """Creates the YoloDetector if a model file is available and --no-yolo was not given."""
+    if args.no_yolo:
+        logging.info("YOLO detection disabled by --no-yolo flag")
+        return None
+
+    model_path = args.model or MODEL_PATH
+    if not model_path.exists():
+        logging.warning("YOLO model not found at %s — detection disabled", model_path)
+        return None
+
+    logging.info("Loading YOLO model from %s", model_path)
+    return YoloDetector(model_path, confidence=args.yolo_conf)
 
 
 def main() -> int:
@@ -101,6 +135,8 @@ def main() -> int:
         camera_scanner = OpenCvCameraScanner()
         camera_factory = OpenCvCamera
 
+    detector = create_detector(args)
+
     window = MainWindow(
         arm_service,
         port_scanner,
@@ -108,6 +144,7 @@ def main() -> int:
         camera_factory,
         calibration_service,
         motion_planner,
+        detector=detector,
     )
 
     window.show()

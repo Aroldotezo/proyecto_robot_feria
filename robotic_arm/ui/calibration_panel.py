@@ -1,12 +1,13 @@
 from collections.abc import Sequence
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QColor, QFontDatabase, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGridLayout,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -23,6 +24,7 @@ from PySide6.QtWidgets import (
 from robotic_arm.domain.arm_heights import ArmHeights
 from robotic_arm.domain.motion_step import MotionStep
 from robotic_arm.domain.reference_point import ReferencePoint
+from robotic_arm.domain.zone import Zone
 COORDINATE_LIMIT_MM = 2000.0
 HEIGHT_MIN_MM = -500.0
 HEIGHT_MAX_MM = 1000.0
@@ -45,6 +47,9 @@ class CalibrationPanel(QWidget):
     arm_point_edited = Signal(int, float, float)  # fila, x del brazo, y del brazo
     heights_changed = Signal(float, float, float)  # z_safe, z_pick, z_drop
     preview_requested = Signal(str)  # id de categoria
+    zone_region_changed = Signal(str, float, float, float, float)  # zone_id, x, y, width, height
+    zone_selected = Signal(str)  # zone_id
+    reset_zones_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -53,6 +58,16 @@ class CalibrationPanel(QWidget):
         self._remove_button = QPushButton("Eliminar seleccionado")
         self._clear_button = QPushButton("Eliminar todos")
         self._status_label = QLabel()
+
+        # Dimensiones de zonas / recuadros
+        self._zones: dict[str, Zone] = {}
+        self._zone_selector = QComboBox()
+        self._zone_x = self._ratio_box()
+        self._zone_y = self._ratio_box()
+        self._zone_w = self._ratio_box(min_val=0.01)
+        self._zone_h = self._ratio_box(min_val=0.01)
+        self._reset_zones_button = QPushButton("Restablecer recuadros por defecto")
+
         self._z_safe = self._height_box()
         self._z_pick = self._height_box()
         self._z_drop = self._height_box()
@@ -91,6 +106,30 @@ class CalibrationPanel(QWidget):
         self._destination_combo.clear()
         for label, category_id in items:
             self._destination_combo.addItem(label, category_id)
+
+    @property
+    def selected_zone_id(self) -> str | None:
+        return self._zone_selector.currentData()
+
+    def set_zones(self, zones: Sequence[Zone]) -> None:
+        self._zones = {zone.id: zone for zone in zones}
+        self._zone_selector.blockSignals(True)
+        current_id = self._zone_selector.currentData()
+        self._zone_selector.clear()
+        for zone in zones:
+            pixmap = QPixmap(14, 14)
+            pixmap.fill(QColor(zone.color))
+            icon = QIcon(pixmap)
+            self._zone_selector.addItem(icon, f"{zone.label} ({zone.id})", zone.id)
+
+        idx = self._zone_selector.findData(current_id)
+        if idx >= 0:
+            self._zone_selector.setCurrentIndex(idx)
+        elif self._zone_selector.count() > 0:
+            self._zone_selector.setCurrentIndex(0)
+        self._zone_selector.blockSignals(False)
+
+        self._update_zone_spinboxes()
 
     def set_adding_point(self, active: bool) -> None:
         self._add_button.blockSignals(True)
@@ -141,6 +180,34 @@ class CalibrationPanel(QWidget):
         points_layout.addLayout(buttons)
         points_layout.addWidget(self._status_label)
 
+        zones_box = QGroupBox("Dimensiones de recuadros (zonas)")
+        zones_layout = QVBoxLayout(zones_box)
+        hint_zones = QLabel(
+            "Ajusta posición (X, Y) y tamaño (Ancho, Alto) de cada recuadro. "
+            "Los cambios se reflejan en tiempo real y persisten en la configuración:"
+        )
+        hint_zones.setWordWrap(True)
+        zones_layout.addWidget(hint_zones)
+
+        selector_layout = QHBoxLayout()
+        selector_layout.addWidget(QLabel("Zona:"))
+        selector_layout.addWidget(self._zone_selector, stretch=1)
+        zones_layout.addLayout(selector_layout)
+
+        grid = QGridLayout()
+        grid.addWidget(QLabel("X (izq):"), 0, 0)
+        grid.addWidget(self._zone_x, 0, 1)
+        grid.addWidget(QLabel("Ancho (W):"), 0, 2)
+        grid.addWidget(self._zone_w, 0, 3)
+
+        grid.addWidget(QLabel("Y (sup):"), 1, 0)
+        grid.addWidget(self._zone_y, 1, 1)
+        grid.addWidget(QLabel("Alto (H):"), 1, 2)
+        grid.addWidget(self._zone_h, 1, 3)
+        zones_layout.addLayout(grid)
+
+        zones_layout.addWidget(self._reset_zones_button)
+
         heights_box = QGroupBox("Alturas (mm, +Z hacia arriba)")
         heights_form = QFormLayout(heights_box)
         heights_form.addRow("Z_SAFE (desplazamiento)", self._z_safe)
@@ -160,6 +227,7 @@ class CalibrationPanel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addWidget(points_box)
+        layout.addWidget(zones_box)
         layout.addWidget(heights_box)
         layout.addWidget(test_box)
         layout.addStretch()
@@ -169,10 +237,85 @@ class CalibrationPanel(QWidget):
         self._remove_button.clicked.connect(self._on_remove_clicked)
         self._clear_button.clicked.connect(self._on_clear_clicked)
         self._preview_button.clicked.connect(self._on_preview_clicked)
+        self._zone_selector.currentIndexChanged.connect(self._on_zone_selected)
+        for box in (self._zone_x, self._zone_y, self._zone_w, self._zone_h):
+            box.valueChanged.connect(self._emit_zone_changed)
+        self._reset_zones_button.clicked.connect(self._on_reset_zones_clicked)
         for box in (self._z_safe, self._z_pick, self._z_drop):
             box.valueChanged.connect(self._emit_heights_changed)
 
     # ------------------------------------------------------------------ internos
+
+    @staticmethod
+    def _ratio_box(min_val: float = 0.0, max_val: float = 1.0) -> QDoubleSpinBox:
+        box = QDoubleSpinBox()
+        box.setRange(min_val, max_val)
+        box.setDecimals(3)
+        box.setSingleStep(0.01)
+        box.setKeyboardTracking(False)
+        return box
+
+    def _update_zone_spinboxes(self) -> None:
+        zone_id = self._zone_selector.currentData()
+        if not zone_id or zone_id not in self._zones:
+            return
+        zone = self._zones[zone_id]
+        r = zone.region
+        for box in (self._zone_x, self._zone_y, self._zone_w, self._zone_h):
+            box.blockSignals(True)
+        self._zone_x.setMaximum(round(max(0.0, 1.0 - r.width), 3))
+        self._zone_y.setMaximum(round(max(0.0, 1.0 - r.height), 3))
+        self._zone_w.setMaximum(round(max(0.01, 1.0 - r.x), 3))
+        self._zone_h.setMaximum(round(max(0.01, 1.0 - r.y), 3))
+
+        self._zone_x.setValue(r.x)
+        self._zone_y.setValue(r.y)
+        self._zone_w.setValue(r.width)
+        self._zone_h.setValue(r.height)
+        for box in (self._zone_x, self._zone_y, self._zone_w, self._zone_h):
+            box.blockSignals(False)
+
+    def _on_zone_selected(self, _index: int) -> None:
+        self._update_zone_spinboxes()
+        zone_id = self._zone_selector.currentData()
+        if zone_id:
+            self.zone_selected.emit(zone_id)
+
+    def _emit_zone_changed(self, _val: float = 0.0) -> None:
+        zone_id = self._zone_selector.currentData()
+        if not zone_id:
+            return
+        x = self._zone_x.value()
+        y = self._zone_y.value()
+        w = self._zone_w.value()
+        h = self._zone_h.value()
+
+        self._zone_w.setMaximum(round(max(0.01, 1.0 - x), 3))
+        self._zone_h.setMaximum(round(max(0.01, 1.0 - y), 3))
+        self._zone_x.setMaximum(round(max(0.0, 1.0 - w), 3))
+        self._zone_y.setMaximum(round(max(0.0, 1.0 - h), 3))
+
+        if x + w > 1.0:
+            w = round(max(0.01, 1.0 - x), 3)
+            self._zone_w.blockSignals(True)
+            self._zone_w.setValue(w)
+            self._zone_w.blockSignals(False)
+        if y + h > 1.0:
+            h = round(max(0.01, 1.0 - y), 3)
+            self._zone_h.blockSignals(True)
+            self._zone_h.setValue(h)
+            self._zone_h.blockSignals(False)
+
+        self.zone_region_changed.emit(zone_id, x, y, w, h)
+
+    def _on_reset_zones_clicked(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Restablecer recuadros",
+            "¿Deseas restablecer las dimensiones y posiciones de todos los recuadros a sus valores por defecto?",
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.reset_zones_requested.emit()
 
     @staticmethod
     def _height_box() -> QDoubleSpinBox:

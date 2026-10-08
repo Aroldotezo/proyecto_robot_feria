@@ -5,7 +5,7 @@ from robotic_arm.application.motion_planner import MotionPlanner
 from robotic_arm.domain.arm_heights import ArmHeights
 from robotic_arm.domain.arm_space import ArmPoint
 from robotic_arm.domain.exceptions.errors import CalibrationException
-from robotic_arm.domain.geometry import NormalizedPoint
+from robotic_arm.domain.geometry import NormalizedPoint, NormalizedRect
 from robotic_arm.ui.calibration_overlay import CalibrationOverlay
 from robotic_arm.ui.calibration_panel import CalibrationPanel
 from robotic_arm.ui.video_view import VideoView
@@ -47,6 +47,9 @@ class CalibrationController(QObject):
         panel.arm_point_edited.connect(self._on_arm_point_edited)
         panel.heights_changed.connect(self._on_heights_changed)
         panel.preview_requested.connect(self._on_preview_requested)
+        panel.zone_region_changed.connect(self._on_zone_region_changed)
+        panel.zone_selected.connect(self._on_zone_selected)
+        panel.reset_zones_requested.connect(self._on_reset_zones)
 
         self.reload()
 
@@ -54,6 +57,8 @@ class CalibrationController(QObject):
         """Pushes the active profile into the panel and overlays (call it after switching profile)."""
         profile = self._service.profile
         self._zone_overlay.set_zones(profile.zones)
+        self._panel.set_zones(profile.zones)
+        self._zone_overlay.set_selected_zone(self._panel.selected_zone_id)
         self._panel.set_destinations([(zone.label, zone.category_id) for zone in profile.destination_zones])
         self._panel.set_heights(profile.heights)
         self._refresh_points()
@@ -115,6 +120,28 @@ class CalibrationController(QObject):
             self._panel.show_plan_message(f"No se puede evaluar: {e}")
             return
         self._panel.show_plan(steps)
+
+    def _on_zone_region_changed(self, zone_id: str, x: float, y: float, w: float, h: float) -> None:
+        try:
+            rect = NormalizedRect(x, y, w, h)
+            self._service.update_zone_region(zone_id, rect)
+            profile = self._service.profile
+            self._zone_overlay.set_zones(profile.zones)
+            self._panel.set_zones(profile.zones)
+            self._video_view.refresh()
+            self.status_message.emit(f"Recuadro '{zone_id}' actualizado: ({x:.3f}, {y:.3f}, {w:.3f}, {h:.3f})")
+        except ValueError as e:
+            self.status_message.emit(f"Dimensiones no válidas: {e}")
+
+    def _on_zone_selected(self, zone_id: str) -> None:
+        self._zone_overlay.set_selected_zone(zone_id)
+        self._video_view.refresh()
+
+    def _on_reset_zones(self) -> None:
+        self._service.reset_default_zones()
+        self.reload()
+        self._video_view.refresh()
+        self.status_message.emit("Recuadros restablecidos a los valores por defecto")
 
     # ------------------------------------------------------------------ helpers
 

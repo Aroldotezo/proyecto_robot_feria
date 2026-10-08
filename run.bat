@@ -7,6 +7,7 @@ echo ========================================
 echo       CONTROL DEL BRAZO ROBOTICO
 echo ========================================
 echo.
+
 echo [setup] Buscando Python...
 
 where py >nul 2>&1
@@ -65,6 +66,35 @@ if errorlevel 1 (
 
 echo.
 echo [setup] Dependencias listas.
+echo.
+
+REM ========================================
+REM Modelo YOLO
+REM ========================================
+
+if not exist "models" (
+    echo [setup] Creando carpeta models...
+    mkdir "models"
+)
+
+if exist "models\best.pt" (
+    echo [setup] Modelo YOLO encontrado.
+) else (
+    echo.
+    echo [ERROR] No se encontro el modelo YOLO.
+    echo.
+    echo El archivo requerido es:
+    echo     models\best.pt
+    echo.
+    echo Coloca el modelo entrenado en esa ubicacion
+    echo antes de ejecutar la aplicacion.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo [setup] Modelo YOLO listo.
 echo [setup] Iniciando aplicacion...
 echo.
 

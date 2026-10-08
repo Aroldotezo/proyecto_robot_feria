@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['higo', 'lata', 'lata_defectuoso']
+
+roboflow:
+  workspace: aroldo-javier-tezo-macario
+  project: brazo-robot-manana
+  version: 1
+  license: Private
+  url: https://app.roboflow.com/aroldo-javier-tezo-macario/brazo-robot-manana/1

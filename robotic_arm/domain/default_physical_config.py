@@ -13,8 +13,8 @@ def create_default_physical_config() -> PhysicalArmConfig:
     return PhysicalArmConfig(
         base=ServoCalibration(offset=90.0, direction=1, min_angle=50.0, max_angle=150.0),
         grasp=ShoulderElbowPose(s2=55, s3=110),   # S2 decrement + S3 increment → arm reaches forward
-        lift=ShoulderElbowPose(s2=60, s3=90),
-        travel=ShoulderElbowPose(s2=60, s3=90),
+        lift=ShoulderElbowPose(s2=65, s3=90),      # slightly raised from grasp, where gripper closes
+        travel=ShoulderElbowPose(s2=90, s3=90),    # arm raised/retracted for base rotation
         drop=ShoulderElbowPose(s2=40, s3=20),
         drop_base_angles={"organic": 140, "defective": 100, "inorganic": 60},
         wrist_pitch_angle=180,

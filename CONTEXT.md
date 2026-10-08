@@ -25,7 +25,13 @@ RANGOS QUE MEDIMOS FÍSICAMENTE:
 Zona de agarre:
 - S2 recomendado: 50–60°
 - S2 tiene un límite físico alrededor de 45° que NO debemos sobrepasar.
-- S3 para la posición de agarre: 100° (el intervalo de pickeo va de 100 hacia ABAJO; valores menores extienden el brazo hacia adelante)
+- S3 para la posición de agarre: >100° (S3 INCREMENTA al bajar a pickear; el brazo se extiende hacia adelante/X+)
+- Oscilación de pickeo: S3 parte desde ~90° (travel) e INCREMENTA hasta ~110°+ al bajar
+
+MODELO DE DIRECCIÓN DE SERVOS (validado físicamente):
+- S2: DECREMENTA para bajar/pickear (~55°), INCREMENTA para elevar/viajar (~60°)
+- S3: INCREMENTA para extender hacia adelante (pickeo >100°), DECREMENTA para recoger (viaje ~90°)
+- Nunca bajar S2 por debajo de 45° (límite físico real)
 
 Elevación antes del cierre:
 - S3 ≈ 90° como posición óptima

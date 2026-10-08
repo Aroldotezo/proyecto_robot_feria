@@ -4,10 +4,15 @@ from robotic_arm.domain.servo_calibration import ServoCalibration
 
 def create_default_physical_config() -> PhysicalArmConfig:
     """Poses and ranges measured on the real arm. Tune them here while the arm is being calibrated.
+
+    Servo direction model (physically validated):
+      S2: DECREMENTS to pick (arm goes forward/down), INCREMENTS to lift/travel
+      S3: INCREMENTS when picking (above 100° = arm extends forward), DECREMENTS for travel (90°)
+      S1: rotates only; computed from object X/Y position
     """
     return PhysicalArmConfig(
         base=ServoCalibration(offset=90.0, direction=1, min_angle=50.0, max_angle=150.0),
-        grasp=ShoulderElbowPose(s2=55, s3=100),
+        grasp=ShoulderElbowPose(s2=55, s3=110),   # S2 decrement + S3 increment → arm reaches forward
         lift=ShoulderElbowPose(s2=60, s3=90),
         travel=ShoulderElbowPose(s2=60, s3=90),
         drop=ShoulderElbowPose(s2=40, s3=20),

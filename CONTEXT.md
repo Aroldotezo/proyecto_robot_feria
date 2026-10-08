@@ -13,6 +13,7 @@ El servo 1 es la BASE:
 - límite físico: 50° mínimo
 - límite físico: 150° máximo
 - la posición depende de dónde esté el objeto/destino en el plano XY.
+- offset físico: 90° (HOME = 90° → yaw 0° = frente → servo 90°)
 
 Servo 6 es exclusivamente la GARRA:
 - OPEN = posición de garra abierta
@@ -24,7 +25,7 @@ RANGOS QUE MEDIMOS FÍSICAMENTE:
 Zona de agarre:
 - S2 recomendado: 50–60°
 - S2 tiene un límite físico alrededor de 45° que NO debemos sobrepasar.
-- S3 recomendado para la posición de agarre: 70°
+- S3 para la posición de agarre: 100° (el intervalo de pickeo va de 100 hacia ABAJO; valores menores extienden el brazo hacia adelante)
 
 Elevación antes del cierre:
 - S3 ≈ 90° como posición óptima

@@ -4,7 +4,7 @@ from robotic_arm.domain.arm_heights import ArmHeights
 from robotic_arm.domain.arm_space import ArmPoint
 from robotic_arm.domain.classification_profile import ClassificationProfile
 from robotic_arm.domain.exceptions.errors import CalibrationException
-from robotic_arm.domain.geometry import NormalizedPoint
+from robotic_arm.domain.geometry import NormalizedPoint, NormalizedRect
 from robotic_arm.domain.plane_calibration import MIN_REFERENCE_POINTS, PlaneCalibration
 from robotic_arm.domain.reference_point import ReferencePoint
 from robotic_arm.ports.profile_repository import ProfileRepository
@@ -56,6 +56,19 @@ class CalibrationService:
 
     def set_heights(self, heights: ArmHeights) -> None:
         self._update(heights=heights)
+
+    def update_zone_region(self, zone_id: str, region: NormalizedRect) -> None:
+        zones = [
+            replace(z, region=region) if z.id == zone_id else z
+            for z in self._profile.zones
+        ]
+        self._update(zones=tuple(zones))
+
+    def reset_default_zones(self) -> None:
+        from robotic_arm.application.default_profile import create_default_profile
+
+        default_zones = create_default_profile().zones
+        self._update(zones=default_zones)
 
     def image_to_arm(self, point: NormalizedPoint) -> ArmPoint:
         """Puede soltar la excepcion: CalibrationException mientras el perfil no esta definido."""

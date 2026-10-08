@@ -81,10 +81,11 @@ class SerialArm(ArmController):
 
     def _send(self, *lines: str) -> None:
         connection = self._connection()
-        data = "".join(f"{line}\n" for line in lines).encode()
         try:
-            connection.write(data)
-            connection.flush()
+            for line in lines:
+                connection.write(f"{line}\n".encode())
+                connection.flush()
+                time.sleep(0.02)  # 20ms para permitir que Arduino procese cada comando individualmente
         except serial.SerialException as e:
             raise ArmErrorException(f"Failed to write to {self._port}: {e}") from e
 

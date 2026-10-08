@@ -15,6 +15,7 @@ from robotic_arm.ui.zone_overlay import ZoneOverlay
 class CalibrationController(QObject):
     status_message = Signal(str)
     cursor_info = Signal(str)
+    test_point_changed = Signal(object, str)  # NormalizedPoint, readable description
 
     def __init__(
         self,
@@ -68,6 +69,7 @@ class CalibrationController(QObject):
             self.status_message.emit("Point added: type its arm coordinates (mm) in the table")
             return
         self._test_point = point
+        self.test_point_changed.emit(point, self._describe(point))
         self._calibration_overlay.set_test_point(point)
         self._video_view.refresh()
         self._panel.set_test_point_text(f"Test point: {self._describe(point)}")

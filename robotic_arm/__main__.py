@@ -16,15 +16,17 @@ from robotic_arm.adapters.opencv_camera_scanner import OpenCvCameraScanner
 from robotic_arm.adapters.serial_arm import SerialArm
 from robotic_arm.adapters.serial_port_scanner import SerialPortScanner
 from robotic_arm.adapters.sqlite_profile_repository import SqliteProfileRepository
+
 from robotic_arm.application.arm_service import ArmService
 from robotic_arm.application.calibration_service import CalibrationService
+from robotic_arm.domain.default_physical_config import create_default_physical_config
 from robotic_arm.application.default_profile import create_default_profile, create_demo_profile
 from robotic_arm.application.motion_planner import MotionPlanner
+
 from robotic_arm.domain.exceptions.errors import ProfileStorageException
 from robotic_arm.ports.profile_repository import ProfileRepository
 from robotic_arm.ui.main_window import MainWindow
-from robotic_arm.application.default_arm_model import create_default_arm_model
-from robotic_arm.domain.arm_kinematics import ArmKinematics
+
 
 DATABASE_FILE = "profiles.db"
 
@@ -41,7 +43,12 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="simulated arm with the real camera (profiles are saved as usual)",
     )
-    parser.add_argument("--db", type=Path, default=None, help="profiles database file (default: per-user data folder)")
+    parser.add_argument(
+        "--db",
+        type=Path,
+        default=None,
+        help="profiles database file (default: per-user data folder)",
+    )
     return parser.parse_args()
 
 
@@ -54,8 +61,10 @@ def open_profiles(args: argparse.Namespace) -> tuple[ProfileRepository, str]:
     path = args.db or default_data_directory() / DATABASE_FILE
     repository = SqliteProfileRepository(path)
     default = create_default_profile()
+
     if default.name not in repository.names():
         repository.save(default)
+
     logging.info("Profiles stored in %s", path)
     return repository, default.name
 
@@ -63,20 +72,8 @@ def open_profiles(args: argparse.Namespace) -> tuple[ProfileRepository, str]:
 def main() -> int:
     args = parse_arguments()
     logging.basicConfig(level=logging.INFO)
+
     app = QApplication(sys.argv)
-
-    kinematics = ArmKinematics(create_default_arm_model())
-
-    if args.simulate or args.fake_arm:
-        arm_service, port_scanner = (
-            ArmService(arm_factory=FakeArm, kinematics=kinematics),
-            FakePortScanner(),
-        )
-    else:
-        arm_service, port_scanner = (
-            ArmService(arm_factory=SerialArm, kinematics=kinematics),
-            SerialPortScanner(),
-        )
 
     try:
         repository, profile_name = open_profiles(args)
@@ -85,12 +82,24 @@ def main() -> int:
         QMessageBox.critical(None, "Error", str(e))
         return 1
 
-    motion_planner = MotionPlanner(calibration_service)
+    motion_planner = MotionPlanner(
+        calibration_service,
+        create_default_physical_config(),
+    )
+
+    if args.simulate or args.fake_arm:
+        arm_service = ArmService(arm_factory=FakeArm)
+        port_scanner = FakePortScanner()
+    else:
+        arm_service = ArmService(arm_factory=SerialArm)
+        port_scanner = SerialPortScanner()
 
     if args.simulate:
-        camera_scanner, camera_factory = FakeCameraScanner(), FakeCamera
+        camera_scanner = FakeCameraScanner()
+        camera_factory = FakeCamera
     else:
-        camera_scanner, camera_factory = OpenCvCameraScanner(), OpenCvCamera
+        camera_scanner = OpenCvCameraScanner()
+        camera_factory = OpenCvCamera
 
     window = MainWindow(
         arm_service,
@@ -100,8 +109,10 @@ def main() -> int:
         calibration_service,
         motion_planner,
     )
+
     window.show()
     return app.exec()
+
 
 if __name__ == "__main__":
     sys.exit(main())

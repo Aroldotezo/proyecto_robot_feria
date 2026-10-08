@@ -14,6 +14,7 @@ class CameraController(QObject):
     status_message = Signal(str)
     camera_info = Signal(str)
     error_occurred = Signal(str)
+    new_frame = Signal(object)  # emits the BGR frame ndarray
 
     def __init__(
         self,
@@ -91,6 +92,10 @@ class CameraController(QObject):
         self.status_message.emit(f"Abriendo camara {index}...")
         stream.start()
 
+    @property
+    def stream(self) -> FrameStream | None:
+        return self._stream
+
     @Slot()
     def _on_frame_available(self) -> None:
         if self._stream is None:
@@ -99,6 +104,7 @@ class CameraController(QObject):
         if frame is not None:
             self._frame_size = (frame.shape[1], frame.shape[0])
             self._view.show_frame(frame)
+            self.new_frame.emit(frame)
 
     @Slot(float)
     def _on_fps_updated(self, fps: float) -> None:

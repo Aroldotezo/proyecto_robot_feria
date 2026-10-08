@@ -15,6 +15,7 @@ from robotic_arm.application.arm_service import ArmService
 from robotic_arm.application.calibration_service import CalibrationService
 from robotic_arm.application.motion_planner import MotionPlanner
 from robotic_arm.ports.camera_scanner import CameraScanner
+from robotic_arm.ports.detector import Detector
 from robotic_arm.ports.frame_source import FrameSource
 from robotic_arm.ports.port_scanner import PortScanner
 from robotic_arm.ui.calibration_controller import CalibrationController
@@ -24,6 +25,9 @@ from robotic_arm.ui.camera_controller import CameraController
 from robotic_arm.ui.camera_menu import CameraMenu
 from robotic_arm.ui.connection_controller import ConnectionController
 from robotic_arm.ui.connection_panel import ConnectionPanel
+from robotic_arm.ui.detection_controller import DetectionController
+from robotic_arm.ui.detection_overlay import DetectionOverlay
+from robotic_arm.ui.detection_panel import DetectionPanel
 from robotic_arm.ui.video_view import VideoView
 from robotic_arm.ui.zone_overlay import ZoneOverlay
 from robotic_arm.ui.sequence_controller import SequenceController
@@ -39,6 +43,7 @@ class MainWindow(QMainWindow):
         camera_factory: Callable[[int], FrameSource],
         calibration_service: CalibrationService,
         motion_planner: MotionPlanner,
+        detector: Detector | None = None,
     ) -> None:
         super().__init__()
 
@@ -55,6 +60,7 @@ class MainWindow(QMainWindow):
         connection_panel = ConnectionPanel()
         calibration_panel = CalibrationPanel()
         sequence_panel = SequencePanel()
+        detection_panel = DetectionPanel()
 
         # Docks
         connection_dock = self._add_dock(
@@ -72,8 +78,14 @@ class MainWindow(QMainWindow):
             self._scrollable(sequence_panel),
         )
 
+        detection_dock = self._add_dock(
+            "Detección YOLO",
+            self._scrollable(detection_panel),
+        )
+
         self.tabifyDockWidget(connection_dock, calibration_dock)
         self.tabifyDockWidget(calibration_dock, sequence_dock)
+        self.tabifyDockWidget(sequence_dock, detection_dock)
         connection_dock.raise_()
 
         # Controllers
@@ -110,6 +122,25 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
+        # Detection controller (only if a detector is provided)
+        self._detection_controller: DetectionController | None = None
+        if detector is not None:
+            detection_overlay = DetectionOverlay()
+            self._detection_controller = DetectionController(
+                detection_panel,
+                detector,
+                calibration_service,
+                motion_planner,
+                arm_service,
+                video_view,
+                detection_overlay,
+                parent=self,
+            )
+            # Connect camera frames to detection pipeline
+            self._camera_controller.new_frame.connect(
+                self._detection_controller.on_frame_available
+            )
+
         self._calibration_controller.test_point_changed.connect(
             self._sequence_controller.set_test_point
         )
@@ -129,11 +160,15 @@ class MainWindow(QMainWindow):
             self._cursor_info.setText
         )
 
-        for controller in (
+        status_controllers = [
             self._connection_controller,
             self._camera_controller,
             self._calibration_controller,
-        ):
+        ]
+        if self._detection_controller is not None:
+            status_controllers.append(self._detection_controller)
+
+        for controller in status_controllers:
             controller.status_message.connect(
                 self.statusBar().showMessage
             )
@@ -148,6 +183,8 @@ class MainWindow(QMainWindow):
         self._camera_controller.refresh_cameras()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt naming
+        if self._detection_controller is not None:
+            self._detection_controller.stop()
         self._camera_controller.stop()
         self._connection_controller.shutdown()
         super().closeEvent(event)

@@ -2,7 +2,14 @@ from collections.abc import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QDockWidget, QLabel, QMainWindow, QMessageBox, QScrollArea, QWidget
+from PySide6.QtWidgets import (
+    QDockWidget,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QScrollArea,
+    QWidget,
+)
 
 from robotic_arm.application.arm_service import ArmService
 from robotic_arm.application.calibration_service import CalibrationService
@@ -19,9 +26,8 @@ from robotic_arm.ui.connection_controller import ConnectionController
 from robotic_arm.ui.connection_panel import ConnectionPanel
 from robotic_arm.ui.video_view import VideoView
 from robotic_arm.ui.zone_overlay import ZoneOverlay
-
-from robotic_arm.ui.waypoint_controller import WaypointController
-from robotic_arm.ui.waypoint_panel import WaypointPanel
+from robotic_arm.ui.sequence_controller import SequenceController
+from robotic_arm.ui.sequence_panel import SequencePanel
 
 
 class MainWindow(QMainWindow):
@@ -35,6 +41,7 @@ class MainWindow(QMainWindow):
         motion_planner: MotionPlanner,
     ) -> None:
         super().__init__()
+
         self.setWindowTitle("Brazo robotico clasificador")
         self.resize(1280, 760)
 
@@ -44,21 +51,47 @@ class MainWindow(QMainWindow):
         camera_menu = CameraMenu(self)
         self.menuBar().addMenu(camera_menu)
 
+        # Panels
         connection_panel = ConnectionPanel()
         calibration_panel = CalibrationPanel()
-        waypoint_panel = WaypointPanel()
+        sequence_panel = SequencePanel()
 
-        connection_dock = self._add_dock("Conexion con el brazo", connection_panel)
-        calibration_dock = self._add_dock("Calibracion", self._scrollable(calibration_panel))
-        waypoint_dock = self._add_dock("Prueba de coordenadas", self._scrollable(waypoint_panel))
+        # Docks
+        connection_dock = self._add_dock(
+            "Conexion con el brazo",
+            connection_panel,
+        )
+
+        calibration_dock = self._add_dock(
+            "Calibracion",
+            self._scrollable(calibration_panel),
+        )
+
+        sequence_dock = self._add_dock(
+            "Prueba de secuencia",
+            self._scrollable(sequence_panel),
+        )
 
         self.tabifyDockWidget(connection_dock, calibration_dock)
-        self.tabifyDockWidget(calibration_dock, waypoint_dock)
+        self.tabifyDockWidget(calibration_dock, sequence_dock)
         connection_dock.raise_()
 
-        self._connection_controller = ConnectionController(connection_panel, arm_service, port_scanner, parent=self)
-        self._camera_controller = CameraController(camera_menu, video_view, camera_scanner, camera_factory, parent=self)
-        self._waypoint_controller = WaypointController(waypoint_panel, arm_service, parent=self)
+        # Controllers
+        self._connection_controller = ConnectionController(
+            connection_panel,
+            arm_service,
+            port_scanner,
+            parent=self,
+        )
+
+        self._camera_controller = CameraController(
+            camera_menu,
+            video_view,
+            camera_scanner,
+            camera_factory,
+            parent=self,
+        )
+
         self._calibration_controller = CalibrationController(
             calibration_panel,
             calibration_service,
@@ -69,16 +102,46 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
+        self._sequence_controller = SequenceController(
+            sequence_panel,
+            arm_service,
+            motion_planner,
+            calibration_service,
+            parent=self,
+        )
+
+        self._calibration_controller.test_point_changed.connect(
+            self._sequence_controller.set_test_point
+        )
+
+        # Status bar
         self._camera_info = QLabel()
         self._cursor_info = QLabel()
+
         self.statusBar().addPermanentWidget(self._cursor_info)
         self.statusBar().addPermanentWidget(self._camera_info)
-        self._camera_controller.camera_info.connect(self._camera_info.setText)
-        self._calibration_controller.cursor_info.connect(self._cursor_info.setText)
 
-        for controller in (self._connection_controller, self._camera_controller, self._calibration_controller):
-            controller.status_message.connect(self.statusBar().showMessage)
-        for controller in (self._connection_controller, self._camera_controller):
+        self._camera_controller.camera_info.connect(
+            self._camera_info.setText
+        )
+
+        self._calibration_controller.cursor_info.connect(
+            self._cursor_info.setText
+        )
+
+        for controller in (
+            self._connection_controller,
+            self._camera_controller,
+            self._calibration_controller,
+        ):
+            controller.status_message.connect(
+                self.statusBar().showMessage
+            )
+
+        for controller in (
+            self._connection_controller,
+            self._camera_controller,
+        ):
             controller.error_occurred.connect(self._show_error)
 
         self._connection_controller.refresh_ports()
@@ -91,11 +154,19 @@ class MainWindow(QMainWindow):
 
     def _add_dock(self, title: str, widget: QWidget) -> QDockWidget:
         dock = QDockWidget(title, self)
+
         dock.setWidget(widget)
+
         dock.setFeatures(
-            QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
         )
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+        self.addDockWidget(
+            Qt.DockWidgetArea.RightDockWidgetArea,
+            dock,
+        )
+
         return dock
 
     @staticmethod

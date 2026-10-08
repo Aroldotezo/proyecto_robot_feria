@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from robotic_arm.domain.arm_space import ArmWaypoint
+from robotic_arm.domain.camera.arm_position import ArmPosition
 
 
 class MotionAction(Enum):
@@ -13,12 +13,8 @@ class MotionAction(Enum):
 
 @dataclass(frozen=True, slots=True)
 class MotionStep:
-    """Pasos a los que se mueve el brazo. Solo MOVE_TO tiene el waypoint."""
+    """One step of a manipulation sequence: the exact pose to send to the arm (one ArmPosition)."""
 
     action: MotionAction
-    waypoint: ArmWaypoint | None = None
+    position: ArmPosition
     note: str = ""
-
-    def __post_init__(self) -> None:
-        if (self.action is MotionAction.MOVE_TO) != (self.waypoint is not None):
-            raise ValueError("Solo la posicion de destino necesita un waypoint")

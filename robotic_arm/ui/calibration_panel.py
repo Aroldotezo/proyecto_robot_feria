@@ -227,7 +227,4 @@ class CalibrationPanel(QWidget):
 
     @staticmethod
     def _format_step(number: int, step: MotionStep) -> str:
-        if step.waypoint is None:
-            return f"{number}. {step.note or step.action.value}"
-        w = step.waypoint
-        return f"{number}. X={w.x:7.1f}  Y={w.y:7.1f}  Z={w.z:6.1f}   {step.note}"
+        return f"{number}. {step.note}\n   S1..S6 = {list(step.position.angles)}"

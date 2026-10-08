@@ -1,0 +1,6 @@
+@echo off
+echo Desplazando las coordenadas de calibracion 75mm en X...
+python shift_x_calibration.py
+echo.
+echo Presiona cualquier tecla para salir...
+pause >nul

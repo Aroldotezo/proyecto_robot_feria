@@ -11,25 +11,52 @@ from robotic_arm.domain.physical_arm_config import PhysicalArmConfig, ShoulderEl
 from robotic_arm.domain.zone import Zone
 
 
-class MotionPlanner:
-    """Plans the pick-and-place sequence as exact servo poses taken from the physically validated
-    configuration. The calibration only decides S1 (where the object is); S2/S3 come from the stage
-    poses, and opening or closing the gripper changes S6 alone. No inverse kinematics is involved."""
+from robotic_arm.domain.arm_kinematics import ArmKinematics
+from robotic_arm.domain.arm_space import ArmPoint, ArmWaypoint
 
-    def __init__(self, calibration: CalibrationService, config: PhysicalArmConfig) -> None:
+
+class MotionPlanner:
+    """Plans the pick-and-place sequence using physical kinematics and calibrated parameters.
+    Can operate with physical preset poses or compute dynamic inverse kinematics targets."""
+
+    def __init__(
+        self,
+        calibration: CalibrationService,
+        config: PhysicalArmConfig,
+        kinematics: ArmKinematics | None = None,
+    ) -> None:
         self._calibration = calibration
         self._config = config
+        self._kinematics = kinematics
 
-    def plan_pick_and_place(self, object_position: NormalizedPoint, category_id: str) -> tuple[MotionStep, ...]:
+    @property
+    def kinematics(self) -> ArmKinematics | None:
+        return self._kinematics
+
+    def plan_pick_and_place(
+        self,
+        object_position: NormalizedPoint,
+        category_id: str,
+        target_z: float | None = None,
+    ) -> tuple[MotionStep, ...]:
         """Raises ValueError (outside the evaluation zone, unknown category, on the base axis),
-        CalibrationException (not calibrated) or JointLimitException (S1 outside the base range)."""
+        CalibrationException (not calibrated), UnreachablePointException or JointLimitException."""
         profile = self._calibration.profile
         if not profile.evaluation_zone.region.contains(object_position):
             raise ValueError("El objeto está fuera de la zona de evaluación")
         destination = profile.destination_for(category_id)
 
-        pick_s1 = self.base_angle_for(self._calibration.image_to_arm(object_position))
+        arm_point = self._calibration.image_to_arm(object_position)
+        pick_s1 = self.base_angle_for(arm_point)
         drop_s1 = self._drop_base_angle(category_id, destination)
+
+        # Si hay cinemática inversa configurada, validar alcanzabilidad del waypoint
+        if self._kinematics is not None:
+            z = target_z if target_z is not None else 10.0
+            waypoint = ArmWaypoint(arm_point.x, arm_point.y, z)
+            # Verifica alcanzabilidad y límites físicos de los 6 servos:
+            self._kinematics.inverse(waypoint)
+
         return self._build_sequence(pick_s1, drop_s1)
 
     def base_angle_for(self, point: ArmPoint) -> int:

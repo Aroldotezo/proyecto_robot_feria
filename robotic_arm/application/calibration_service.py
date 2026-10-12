@@ -71,10 +71,20 @@ class CalibrationService:
         self._update(zones=default_zones)
 
     def image_to_arm(self, point: NormalizedPoint) -> ArmPoint:
-        """Puede soltar la excepcion: CalibrationException mientras el perfil no esta definido."""
-        if self._calibration is None:
-            raise CalibrationException(self._problem)
-        return self._calibration.to_arm(point)
+        """Convierte punto normalizado [0, 1] de la cámara cenital a coordenadas (X, Y) en mm del brazo.
+        Si hay homografía calibrada por puntos, la usa. Si no, calcula directamente por geometría analítica:
+        - X_arm: Rango de alcance frontal [130 mm .. 250 mm] según posición vertical de la imagen (y).
+        - Y_arm: Rango lateral [-120 mm .. +120 mm] según posición horizontal de la imagen (x).
+        """
+        if self._calibration is not None:
+            return self._calibration.to_arm(point)
+
+        # Mapeo analítico directo por defecto (cero calibración manual requerida)
+        # La cámara cenital ve: arriba = más lejos (+X), abajo = más cerca (base)
+        # izquierda (x < 0.5) = +Y (hacia la izquierda del brazo), derecha = -Y
+        arm_x = 130.0 + (1.0 - point.y) * 120.0
+        arm_y = (0.5 - point.x) * 240.0
+        return ArmPoint(round(arm_x, 1), round(arm_y, 1))
 
     def status(self) -> CalibrationStatus:
         count = len(self._profile.reference_points)

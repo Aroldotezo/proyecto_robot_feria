@@ -26,7 +26,13 @@ class ArmKinematics:
 
     def gripper_angle(self, gripper: GripperState) -> int:
         model = self._model
-        return model.gripper_open_angle if gripper is GripperState.OPEN else model.gripper_closed_angle
+        angle = model.gripper_open_angle if gripper is GripperState.OPEN else model.gripper_closed_angle
+        min_g, max_g = model.gripper_range
+        if not (min_g - _EPSILON <= angle <= max_g + _EPSILON):
+            raise JointLimitException(
+                f"El servo 6 (gripper) necesitaría {angle}° y su rango permitido es {min_g:.0f}°-{max_g:.0f}°"
+            )
+        return angle
 
     # ------------------------------------------------------------------ inverse
 
@@ -132,11 +138,20 @@ class ArmKinematics:
             (3, "codo", model.elbow),
             (4, "muñeca", model.wrist),
         )
-        return [
+        problems = [
             f"servo {number} ({name}) necesitaría {value:.1f}° y su rango permitido es {calibration.min_angle:.0f}°-{calibration.max_angle:.0f}°"
             for (number, name, calibration), value in zip(joints, servo)
             if not calibration.allows(value)
         ]
+
+        # Validar servo 5 (muñeca roll)
+        min_roll, max_roll = model.wrist_roll_range
+        if not (min_roll - _EPSILON <= model.wrist_roll_angle <= max_roll + _EPSILON):
+            problems.append(
+                f"servo 5 (roll) configurado en {model.wrist_roll_angle}° excede su rango permitido {min_roll:.0f}°-{max_roll:.0f}°"
+            )
+
+        return problems
 
 
 def _wrap(angle_deg: float) -> float:

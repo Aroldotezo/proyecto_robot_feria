@@ -93,8 +93,13 @@ class DetectionOverlay:
         det = info.detection
         lines: list[str] = []
 
-        # Line 1: class + confidence
-        class_label = det.clase.value.upper()
+        # Line 1: specific object name + category + confidence
+        category_label = det.clase.value.upper()
+        if det.label:
+            object_name = det.label.replace("_", " ").upper()
+            class_label = f"{object_name} [{category_label}]"
+        else:
+            class_label = category_label
         conf = f"{det.reliability:.0%}"
         tracked_marker = " ★" if info.is_tracked else ""
         lines.append(f"{class_label} {conf}{tracked_marker}")

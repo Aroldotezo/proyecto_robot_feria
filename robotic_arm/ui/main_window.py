@@ -28,6 +28,7 @@ from robotic_arm.ui.connection_panel import ConnectionPanel
 from robotic_arm.ui.detection_controller import DetectionController
 from robotic_arm.ui.detection_overlay import DetectionOverlay
 from robotic_arm.ui.detection_panel import DetectionPanel
+from robotic_arm.ui.dual_video_widget import DualVideoWidget
 from robotic_arm.ui.video_view import VideoView
 from robotic_arm.ui.zone_overlay import ZoneOverlay
 from robotic_arm.ui.sequence_controller import SequenceController
@@ -50,8 +51,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Brazo robotico clasificador")
         self.resize(1280, 760)
 
-        video_view = VideoView()
-        self.setCentralWidget(video_view)
+        dual_video = DualVideoWidget(self)
+        self.setCentralWidget(dual_video)
+        video_view = dual_video.top_view  # Para overlays de calibración y detección cenital
 
         camera_menu = CameraMenu(self)
         self.menuBar().addMenu(camera_menu)
@@ -96,9 +98,11 @@ class MainWindow(QMainWindow):
             parent=self,
         )
 
-        self._camera_controller = CameraController(
+        from robotic_arm.ui.dual_camera_controller import DualCameraController
+
+        self._camera_controller = DualCameraController(
             camera_menu,
-            video_view,
+            dual_video,
             camera_scanner,
             camera_factory,
             parent=self,
@@ -136,9 +140,12 @@ class MainWindow(QMainWindow):
                 detection_overlay,
                 parent=self,
             )
-            # Connect camera frames to detection pipeline
-            self._camera_controller.new_frame.connect(
+            # Conectar frames cenital (YOLO) y lateral (Z)
+            self._camera_controller.top_frame_available.connect(
                 self._detection_controller.on_frame_available
+            )
+            self._camera_controller.side_frame_available.connect(
+                self._detection_controller.on_side_frame_available
             )
 
         self._calibration_controller.test_point_changed.connect(

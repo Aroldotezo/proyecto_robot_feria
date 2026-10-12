@@ -70,6 +70,7 @@ class YoloDetector(Detector):
                         y=int(y1),
                         width=int(x2 - x1),
                         height=int(y2 - y1),
+                        label=class_name,
                     )
                 )
 

@@ -12,6 +12,7 @@ class Detection:
     y: int
     width: int
     height: int
+    label: str | None = None
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.reliability <= 1.0:

@@ -1,18 +1,24 @@
+import logging
 import math
 
 from robotic_arm.application.calibration_service import CalibrationService
 from robotic_arm.domain.camera.arm_position import ArmPosition
 from robotic_arm.domain.arm_space import ArmPoint
 from robotic_arm.domain.drop_angle_check import DropAngleCheck
-from robotic_arm.domain.exceptions.errors import CalibrationException, JointLimitException
+from robotic_arm.domain.exceptions.errors import CalibrationException, JointLimitException, UnreachablePointException
 from robotic_arm.domain.geometry import NormalizedPoint
 from robotic_arm.domain.motion_step import MotionAction, MotionStep
 from robotic_arm.domain.physical_arm_config import PhysicalArmConfig, ShoulderElbowPose
 from robotic_arm.domain.zone import Zone
 
-
 from robotic_arm.domain.arm_kinematics import ArmKinematics
 from robotic_arm.domain.arm_space import ArmPoint, ArmWaypoint
+
+log = logging.getLogger(__name__)
+
+# Margen de tolerancia (2 %) al verificar si el objeto está dentro de la zona de evaluación.
+# Evita rechazos espurios cuando el centro de la detección cae exactamente en el borde del recuadro.
+_EVAL_ZONE_MARGIN = 0.02
 
 
 class MotionPlanner:
@@ -39,23 +45,52 @@ class MotionPlanner:
         category_id: str,
         target_z: float | None = None,
     ) -> tuple[MotionStep, ...]:
-        """Raises ValueError (outside the evaluation zone, unknown category, on the base axis),
-        CalibrationException (not calibrated), UnreachablePointException or JointLimitException."""
+        """Plans the full pick-and-place sequence.
+
+        Tolerant fallback behaviour:
+        - A ±EVAL_ZONE_MARGIN slack is applied to the evaluation zone check so that
+          detections at the very edge of the rectangle are not rejected.
+        - If the pick or drop angle is outside the servo range, the angle is clamped
+          to the nearest limit and a WARNING is logged (no exception is raised).
+        - If inverse kinematics fails (UnreachablePointException / JointLimitException),
+          the operation continues using the preset S2/S3 poses; a WARNING is logged.
+
+        Raises:
+            ValueError: object outside the evaluation zone (with margin) or unknown category.
+            CalibrationException: no calibration is available.
+        """
         profile = self._calibration.profile
-        if not profile.evaluation_zone.region.contains(object_position):
+        eval_region = profile.evaluation_zone.region
+        # Expanded check: allow the detection center to be slightly outside the drawn rectangle
+        expanded_x = max(0.0, eval_region.x - _EVAL_ZONE_MARGIN)
+        expanded_y = max(0.0, eval_region.y - _EVAL_ZONE_MARGIN)
+        expanded_w = min(1.0 - expanded_x, eval_region.width + 2 * _EVAL_ZONE_MARGIN)
+        expanded_h = min(1.0 - expanded_y, eval_region.height + 2 * _EVAL_ZONE_MARGIN)
+        inside = (
+            expanded_x <= object_position.x <= expanded_x + expanded_w
+            and expanded_y <= object_position.y <= expanded_y + expanded_h
+        )
+        if not inside:
             raise ValueError("El objeto está fuera de la zona de evaluación")
+
         destination = profile.destination_for(category_id)
 
         arm_point = self._calibration.image_to_arm(object_position)
-        pick_s1 = self.base_angle_for(arm_point)
-        drop_s1 = self._drop_base_angle(category_id, destination)
+        pick_s1 = self._safe_base_angle(arm_point, label="pick")
+        drop_s1 = self._safe_drop_base_angle(category_id, destination)
 
-        # Si hay cinemática inversa configurada, validar alcanzabilidad del waypoint
+        # Si hay cinemática inversa configurada, intentar validarla; si falla, continuar con poses preestablecidas
         if self._kinematics is not None:
             z = target_z if target_z is not None else 10.0
             waypoint = ArmWaypoint(arm_point.x, arm_point.y, z)
-            # Verifica alcanzabilidad y límites físicos de los 6 servos:
-            self._kinematics.inverse(waypoint)
+            try:
+                self._kinematics.inverse(waypoint)
+            except (UnreachablePointException, JointLimitException) as ik_err:
+                log.warning(
+                    "⚠ IK fallback: el punto (%.1f, %.1f, %.1f) mm no es alcanzable con precisión "
+                    "(%s). El brazo usará las poses S2/S3 fijas y avanzará hasta el límite.",
+                    arm_point.x, arm_point.y, z, ik_err,
+                )
 
         return self._build_sequence(pick_s1, drop_s1)
 
@@ -80,7 +115,43 @@ class MotionPlanner:
             checks.append(DropAngleCheck(zone.label, zone.category_id, self._config.drop_base_angle(zone.category_id), self._computed_for(zone)))
         return checks
 
-    # ------------------------------------------------------------------ internals
+    # ------------------------------------------------------------------ fallback internals
+
+    def _safe_base_angle(self, point: ArmPoint, label: str = "") -> int:
+        """Like base_angle_for() but clamps to the servo limits instead of raising, and logs a warning."""
+        if math.hypot(point.x, point.y) < 1e-9:
+            raise ValueError("El punto está sobre el eje de la base: la dirección de giro no está definida")
+        base = self._config.base
+        servo = base.to_servo(math.degrees(math.atan2(point.y, point.x)))
+        rounded = round(servo)
+        if not base.allows(servo) or not base.allows(rounded):
+            clamped = int(max(base.min_angle, min(base.max_angle, rounded)))
+            log.warning(
+                "⚠ Alcance %s: S1 ideal = %.1f° está fuera del rango %d°-%d°. "
+                "El brazo avanzará hasta el límite (S1 = %d°). "
+                "Ajusta el recuadro de calibración si este aviso es frecuente.",
+                label, servo, base.min_angle, base.max_angle, clamped,
+            )
+            return clamped
+        return rounded
+
+    def _safe_drop_base_angle(self, category_id: str, destination: Zone) -> int:
+        taught = self._config.drop_base_angle(category_id)
+        if taught is not None:
+            return taught
+        try:
+            return self._safe_base_angle(
+                self._calibration.image_to_arm(destination.region.center), label=f"drop({category_id})"
+            )
+        except (CalibrationException, ValueError):
+            # Si el centro de la zona no se puede proyectar, usa el neutro de la base
+            base = self._config.base
+            fallback = int((base.min_angle + base.max_angle) / 2)
+            log.warning(
+                "⚠ No se pudo calcular el ángulo de drop para '%s'; usando neutro S1 = %d°.",
+                category_id, fallback,
+            )
+            return fallback
 
     def _drop_base_angle(self, category_id: str, destination: Zone) -> int:
         taught = self._config.drop_base_angle(category_id)

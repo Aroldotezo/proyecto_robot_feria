@@ -1,4 +1,4 @@
-from robotic_arm.ui.overlay import Overlay
+from robotic_arm.domain.overlay import Overlay
 
 import numpy as np
 from numpy.typing import NDArray

@@ -19,7 +19,13 @@ class Worker(QRunnable):
     def run(self) -> None:
         try:
             result = self._task()
-        except Exception as e:  #Se bloquea la UI
-            self.signals.failed.emit(str(e))
+        except Exception as e:
+            try:
+                self.signals.failed.emit(str(e))
+            except RuntimeError:
+                pass  # El receptor de la señal ya fue destruido por cierre de ventana
         else:
-            self.signals.finished.emit(result)
+            try:
+                self.signals.finished.emit(result)
+            except RuntimeError:
+                pass

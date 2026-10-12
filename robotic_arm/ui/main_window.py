@@ -1,3 +1,4 @@
+from robotic_arm.ui.camera_views_wrapper import CameraViewsWrapper
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
@@ -8,6 +9,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QScrollArea,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -28,7 +30,6 @@ from robotic_arm.ui.connection_panel import ConnectionPanel
 from robotic_arm.ui.detection_controller import DetectionController
 from robotic_arm.ui.detection_overlay import DetectionOverlay
 from robotic_arm.ui.detection_panel import DetectionPanel
-from robotic_arm.ui.dual_video_widget import DualVideoWidget
 from robotic_arm.ui.video_view import VideoView
 from robotic_arm.ui.zone_overlay import ZoneOverlay
 from robotic_arm.ui.sequence_controller import SequenceController
@@ -51,9 +52,50 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Brazo robotico clasificador")
         self.resize(1280, 760)
 
-        dual_video = DualVideoWidget(self)
-        self.setCentralWidget(dual_video)
-        video_view = dual_video.top_view  # Para overlays de calibración y detección cenital
+        # ---- Cámaras como Docks movibles / desacoplables ----
+        self.setDockOptions(
+            QMainWindow.DockOption.AnimatedDocks
+            | QMainWindow.DockOption.AllowNestedDocks
+            | QMainWindow.DockOption.AllowTabbedDocks
+        )
+
+        top_container = QWidget()
+        top_layout = QVBoxLayout(top_container)
+        top_layout.setContentsMargins(4, 4, 4, 4)
+        top_status_label = QLabel("Desconectada")
+        top_status_label.setStyleSheet("color: #888888; font-size: 11px;")
+        video_view = VideoView(placeholder="Cámara cenital desconectada")
+        top_layout.addWidget(video_view)
+
+        self._top_dock = QDockWidget("CÁMARA 1: CENITAL (Plano X, Y)", self)
+        self._top_dock.setWidget(top_container)
+        self._top_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._top_dock)
+
+        side_container = QWidget()
+        side_layout = QVBoxLayout(side_container)
+        side_layout.setContentsMargins(4, 4, 4, 4)
+        side_video_view = VideoView(placeholder="Cámara lateral desconectada")
+        side_layout.addWidget(side_video_view)
+
+        self._side_dock = QDockWidget("CÁMARA 2: LATERAL (Altura Z)", self)
+        self._side_dock.setWidget(side_container)
+        self._side_dock.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        )
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self._side_dock)
+        self.splitDockWidget(self._top_dock, self._side_dock, Qt.Orientation.Horizontal)
+
+        dual_video = CameraViewsWrapper(
+            video_view,
+            side_video_view,
+            self._top_dock,
+            self._side_dock,
+        )
 
         camera_menu = CameraMenu(self)
         self.menuBar().addMenu(camera_menu)
@@ -88,7 +130,7 @@ class MainWindow(QMainWindow):
         self.tabifyDockWidget(connection_dock, calibration_dock)
         self.tabifyDockWidget(calibration_dock, sequence_dock)
         self.tabifyDockWidget(sequence_dock, detection_dock)
-        connection_dock.raise_()
+        detection_dock.raise_()
 
         # Controllers
         self._connection_controller = ConnectionController(

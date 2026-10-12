@@ -1,4 +1,4 @@
-from typing import Protocol
+from robotic_arm.ui.overlay import Overlay
 
 import numpy as np
 from numpy.typing import NDArray
@@ -8,10 +8,6 @@ from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
 
 from robotic_arm.domain.geometry import NormalizedPoint
 
-
-class Overlay(Protocol):
-    def paint(self, painter: QPainter, width: int, height: int) -> None:
-        """Draws over the displayed frame; (width, height) is the size of the displayed image."""
 
 
 class VideoView(QLabel):

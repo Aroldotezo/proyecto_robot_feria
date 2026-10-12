@@ -1,11 +1,7 @@
+from robotic_arm.domain.worker_signals import WorkerSignals
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QRunnable, Signal
-
-
-class WorkerSignals(QObject):
-    finished = Signal(object)  # resultado de la tarea
-    failed = Signal(str)       # mensaje de error
+from PySide6.QtCore import QRunnable
 
 
 class Worker(QRunnable):

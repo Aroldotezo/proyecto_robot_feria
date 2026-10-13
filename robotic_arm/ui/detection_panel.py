@@ -20,6 +20,9 @@ class DetectionPanel(QWidget):
     arm_tracking_toggled = Signal(bool)
     confidence_changed = Signal(float)
     manual_pick_requested = Signal()
+    servo_debug_requested = Signal()        # todos a 90° → 40°
+    servo_grasp_test_requested = Signal()   # prueba posición de agarre actual
+    servo_drop_test_requested = Signal()    # prueba posición de soltado actual
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -42,6 +45,30 @@ class DetectionPanel(QWidget):
         )
         self._manual_pick_button.clicked.connect(self.manual_pick_requested)
         tracking_layout.addWidget(self._manual_pick_button)
+
+        self._debug_button = QPushButton("🔧 Debug Servos (90° → -50°)")
+        self._debug_button.setMinimumHeight(34)
+        self._debug_button.setStyleSheet(
+            "background-color: #e67700; color: white; font-weight: bold; border-radius: 4px;"
+        )
+        self._debug_button.clicked.connect(self.servo_debug_requested)
+        tracking_layout.addWidget(self._debug_button)
+
+        self._grasp_test_button = QPushButton("⤵ Probar posición GRASP")
+        self._grasp_test_button.setMinimumHeight(30)
+        self._grasp_test_button.setStyleSheet(
+            "background-color: #1864ab; color: white; font-weight: bold; border-radius: 4px;"
+        )
+        self._grasp_test_button.clicked.connect(self.servo_grasp_test_requested)
+        tracking_layout.addWidget(self._grasp_test_button)
+
+        self._drop_test_button = QPushButton("⤴ Probar posición DROP")
+        self._drop_test_button.setMinimumHeight(30)
+        self._drop_test_button.setStyleSheet(
+            "background-color: #5c3bc0; color: white; font-weight: bold; border-radius: 4px;"
+        )
+        self._drop_test_button.clicked.connect(self.servo_drop_test_requested)
+        tracking_layout.addWidget(self._drop_test_button)
 
         self._tracking_status = QLabel("El brazo NO se moverá automáticamente.")
         self._tracking_status.setWordWrap(True)

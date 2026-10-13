@@ -77,6 +77,9 @@ class DetectionController(QObject):
         panel.arm_tracking_toggled.connect(self._on_arm_tracking_toggled)
         panel.confidence_changed.connect(self._on_confidence_changed)
         panel.manual_pick_requested.connect(self._on_manual_pick_requested)
+        panel.servo_debug_requested.connect(self._on_servo_debug)
+        panel.servo_grasp_test_requested.connect(self._on_grasp_test)
+        panel.servo_drop_test_requested.connect(self._on_drop_test)
 
         self._latest_z: float = 15.0  # Altura por defecto en mm sobre la mesa
 
@@ -129,6 +132,103 @@ class DetectionController(QObject):
             return
         self.status_message.emit("Iniciando Pick & Place manual...")
         self._execute_pick_and_place(target)
+
+    def _on_servo_debug(self) -> None:
+        """Secuencia de debug físico: todos los servos a 90°, espera 3 s, todos a 40°.
+        Permite verificar visualmente la dirección de cada servo sin necesidad de tracking.
+        """
+        if self._arm_busy:
+            self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
+            return
+        if not self._arm_service.connected:
+            self.status_message.emit("⚠ Conecta el brazo primero (debug requiere conexión).")
+            return
+        self._arm_busy = True
+        self.status_message.emit("🔧 Debug: enviando todos los servos a 90°...")
+
+        def _run_debug() -> None:
+            import time
+            from robotic_arm.domain.camera.arm_position import ArmPosition
+            arm = self._arm_service._require_arm()  # acceso directo para debug
+            arm.move_to(ArmPosition((90, 90, 90, 90, 90, 90)))
+            time.sleep(3.0)
+            arm.move_to(ArmPosition((40, 40, 40, 40, 40, 40)))
+
+        worker = Worker(_run_debug)
+        worker.signals.finished.connect(self._on_debug_finished)
+        worker.signals.failed.connect(self._on_arm_failed)
+        from PySide6.QtCore import QThreadPool
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_grasp_test(self) -> None:
+        """Prueba física directa de la postura GRASP (aproximación hacia la mesa)."""
+        if self._arm_busy:
+            self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
+            return
+        if not self._arm_service.connected:
+            self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
+            return
+        self._arm_busy = True
+        config = self._planner.config
+        grasp = config.grasp
+        travel = config.travel
+        self.status_message.emit(f"⤵ Probando GRASP: Travel (S2={travel.s2}°, S3={travel.s3}°) → Grasp (S2={grasp.s2}°, S3={grasp.s3}°)")
+
+        def _run_grasp() -> None:
+            import time
+            from robotic_arm.domain.camera.arm_position import ArmPosition
+            arm = self._arm_service._require_arm()
+            # 1. Travel pose inicial
+            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            time.sleep(2.0)
+            # 2. Bajar a Grasp
+            arm.move_to(ArmPosition((90, grasp.s2, grasp.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            time.sleep(3.0)
+            # 3. Volver a Travel
+            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+
+        worker = Worker(_run_grasp)
+        worker.signals.finished.connect(self._on_arm_finished)
+        worker.signals.failed.connect(self._on_arm_failed)
+        from PySide6.QtCore import QThreadPool
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_drop_test(self) -> None:
+        """Prueba física directa de la postura DROP (soltado en zona destino)."""
+        if self._arm_busy:
+            self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
+            return
+        if not self._arm_service.connected:
+            self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
+            return
+        self._arm_busy = True
+        config = self._planner.config
+        drop = config.drop
+        travel = config.travel
+        drop_s1 = config.drop_base_angles.get("defective", 100)
+        self.status_message.emit(f"⤴ Probando DROP (S1={drop_s1}°, S2={drop.s2}°, S3={drop.s3}°)")
+
+        def _run_drop() -> None:
+            import time
+            from robotic_arm.domain.camera.arm_position import ArmPosition
+            arm = self._arm_service._require_arm()
+            # 1. Travel al centro de drop
+            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            time.sleep(2.0)
+            # 2. Bajar a drop
+            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            time.sleep(2.0)
+            # 3. Abrir garra
+            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            time.sleep(1.5)
+            # 4. Volver a Travel
+            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+
+        worker = Worker(_run_drop)
+        worker.signals.finished.connect(self._on_arm_finished)
+        worker.signals.failed.connect(self._on_arm_failed)
+        from PySide6.QtCore import QThreadPool
+        QThreadPool.globalInstance().start(worker)
 
     def stop(self) -> None:
         """Clear detections when the camera stops."""
@@ -320,6 +420,11 @@ class DetectionController(QObject):
     def _on_arm_finished(self, _result: object) -> None:
         self._arm_busy = False
         self.status_message.emit("Secuencia de brazo completada")
+
+    @Slot(object)
+    def _on_debug_finished(self, _result: object) -> None:
+        self._arm_busy = False
+        self.status_message.emit("🔧 Debug completado: todos los servos llegaron a 40°. Observa el resultado físico.")
 
     @Slot(str)
     def _on_arm_failed(self, message: str) -> None:

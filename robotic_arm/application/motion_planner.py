@@ -36,6 +36,10 @@ class MotionPlanner:
         self._kinematics = kinematics
 
     @property
+    def config(self) -> PhysicalArmConfig:
+        return self._config
+
+    @property
     def kinematics(self) -> ArmKinematics | None:
         return self._kinematics
 
@@ -92,7 +96,15 @@ class MotionPlanner:
                     arm_point.x, arm_point.y, z, ik_err,
                 )
 
-        return self._build_sequence(pick_s1, drop_s1)
+        # Cálculo dinámico de alcance: adapta S2 y S3 según la distancia del objeto (y)
+        # S2 decrece hacia adelante (y cercano ~0.05 → 56°; y lejano ~0.45 → 44°)
+        # S3 decrece hacia la mesa (y cercano → 76°; y lejano → 66°)
+        t = max(0.0, min(1.0, object_position.y / 0.46))
+        dyn_s2 = max(38, int(round(56 - t * 12)))
+        dyn_s3 = int(round(76 - t * 10))
+        custom_grasp = ShoulderElbowPose(s2=dyn_s2, s3=dyn_s3)
+
+        return self._build_sequence(pick_s1, drop_s1, custom_grasp=custom_grasp)
 
     def base_angle_for(self, point: ArmPoint) -> int:
         """S1 for a position on the work plane (arm frame, mm). Never clamped: out of range is an error."""
@@ -165,9 +177,12 @@ class MotionPlanner:
         except (CalibrationException, JointLimitException, ValueError):
             return None
 
-    def _build_sequence(self, pick_s1: int, drop_s1: int) -> tuple[MotionStep, ...]:
+    def _build_sequence(
+        self, pick_s1: int, drop_s1: int, custom_grasp: ShoulderElbowPose | None = None
+    ) -> tuple[MotionStep, ...]:
         config = self._config
         opened, closed = config.gripper_open_angle, config.gripper_closed_angle
+        grasp_stage = custom_grasp or config.grasp
 
         def pose(s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
             return ArmPosition((s1, stage.s2, stage.s3, config.wrist_pitch_angle, config.wrist_roll_angle, gripper))
@@ -179,7 +194,7 @@ class MotionPlanner:
                 steps.append(MotionStep(MotionAction.MOVE_TO, position, note))
 
         move(f"Girar la base hacia el objeto (S1 = {pick_s1}°) con el brazo elevado", pose(pick_s1, config.travel, opened))
-        move("Aproximar: bajar a la zona de agarre", pose(pick_s1, config.grasp, opened))
+        move("Aproximar: bajar a la zona de agarre", pose(pick_s1, grasp_stage, opened))
         move("Elevar ligeramente antes de cerrar", pose(pick_s1, config.lift, opened))
         steps.append(MotionStep(MotionAction.CLOSE_GRIPPER, pose(pick_s1, config.lift, closed), "Cerrar la garra (S1, S2 y S3 no cambian)"))
         move("Elevar con el objeto", pose(pick_s1, config.travel, closed))

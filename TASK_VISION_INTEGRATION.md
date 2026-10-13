@@ -45,7 +45,7 @@ El objetivo es que la detección de YOLO no se quede aislada: debe formar parte 
 
 El modelo entrenado ya está disponible en:
 
-`models/best.pt`
+`models/best_v2.pt`
 
 Ya comprobé manualmente que `YoloDetector` funciona correctamente con imágenes reales y que reconoce las tres clases entrenadas.
 

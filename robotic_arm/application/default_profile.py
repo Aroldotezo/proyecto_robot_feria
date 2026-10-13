@@ -15,14 +15,18 @@ _DEMO_REFERENCE_POINTS = (
 
 
 def create_default_profile() -> ClassificationProfile:
-    """Organic sorting layout: evaluation zone on top, three destination zones below."""
+    """Organic sorting layout: evaluation zone at top (near base), destination zones at bottom (forward).
+    Matches physical layout: camera bottom = arm forward (X+), camera top = near base.
+    """
     return ClassificationProfile(
         name="Organic sorting",
         zones=(
+            # Zona de evaluación arriba (y pequeño = cerca de la base físicamente)
             Zone("evaluation", "Evaluation zone", ZoneRole.EVALUATION, NormalizedRect(0.04, 0.04, 0.92, 0.42), color="#FFD43B"),
-            Zone("inorganic", "Inorganic", ZoneRole.DESTINATION, NormalizedRect(0.04, 0.50, 0.29, 0.46), "inorganic", "#FF8787"),
-            Zone("defective", "Defective", ZoneRole.DESTINATION, NormalizedRect(0.355, 0.50, 0.29, 0.46), "defective", "#4DABF7"),
-            Zone("organic", "Organic", ZoneRole.DESTINATION, NormalizedRect(0.67, 0.50, 0.29, 0.46), "organic", "#51CF66"),
+            # Zonas de destino abajo (y grande = adelante físicamente, donde el brazo alcanza al decrementar)
+            Zone("inorganic", "Inorganic", ZoneRole.DESTINATION, NormalizedRect(0.04, 0.54, 0.29, 0.42), "inorganic", "#FF8787"),
+            Zone("defective", "Defective", ZoneRole.DESTINATION, NormalizedRect(0.355, 0.54, 0.29, 0.42), "defective", "#4DABF7"),
+            Zone("organic", "Organic", ZoneRole.DESTINATION, NormalizedRect(0.67, 0.54, 0.29, 0.42), "organic", "#51CF66"),
         ),
     )
 

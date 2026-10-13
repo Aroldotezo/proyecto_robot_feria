@@ -12,10 +12,10 @@ def create_default_physical_config() -> PhysicalArmConfig:
     """
     return PhysicalArmConfig(
         base=ServoCalibration(offset=90.0, direction=1, min_angle=50.0, max_angle=150.0),
-        grasp=ShoulderElbowPose(s2=110, s3=140),  # S2 INVERTIDO (test): 90+20 en lugar de 90-20
-        lift=ShoulderElbowPose(s2=100, s3=90),     # S2 INVERTIDO (test): 90+10
-        travel=ShoulderElbowPose(s2=90, s3=90),    # neutro, no cambia
-        drop=ShoulderElbowPose(s2=140, s3=20),     # S2 INVERTIDO (test): 90+50
+        grasp=ShoulderElbowPose(s2=70, s3=140),   # S2 DECREMENT → arm extends toward X+ (confirmed by debug)
+        lift=ShoulderElbowPose(s2=80, s3=90),      # slightly raised from grasp, where gripper closes
+        travel=ShoulderElbowPose(s2=90, s3=90),    # arm neutral (HOME) for base rotation
+        drop=ShoulderElbowPose(s2=40, s3=20),      # drops forward (low X, near zone boundary)
         drop_base_angles={"organic": 140, "defective": 100, "inorganic": 60},
         wrist_pitch_angle=180,
         wrist_roll_angle=150,

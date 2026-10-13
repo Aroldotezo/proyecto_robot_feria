@@ -28,7 +28,7 @@ def create_default_arm_model() -> ArmModel:
             tool_length_closed=166.0,
         ),
         base=ServoCalibration(offset=90.0, direction=1, min_angle=50.0, max_angle=125.0),
-        shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=20.0, max_angle=90.0),
+        shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=20.0, max_angle=160.0),
         elbow=ServoCalibration(offset=180.0, direction=1, min_angle=0.0, max_angle=160.0),
         wrist=ServoCalibration(offset=90.0, direction=1, min_angle=0.0, max_angle=175.0),
         wrist_roll_angle=90,

@@ -81,10 +81,10 @@ class CalibrationService:
 
         # Mapeo analítico directo por defecto (cero calibración manual requerida)
         # La cámara cenital ve: ABAJO = más lejos (+X, adelante), ARRIBA = más cerca (base)
-        # Confirmado físicamente: decrementar servos → brazo hacia adelante → coincide con y=1 (abajo)
-        # izquierda (x < 0.5) = +Y (hacia la izquierda del brazo), derecha = -Y
+        # Físicamente: derecha (x > 0.5) = gira a la derecha (+S1 hacia 140° Organic),
+        #             izquierda (x < 0.5) = gira a la izquierda (-S1 hacia 60° Inorganic)
         arm_x = 130.0 + point.y * 120.0   # y=1 (abajo) → 250mm (adelante), y=0 (arriba) → 130mm (cerca)
-        arm_y = (0.5 - point.x) * 240.0
+        arm_y = (point.x - 0.5) * 240.0
         return ArmPoint(round(arm_x, 1), round(arm_y, 1))
 
     def status(self) -> CalibrationStatus:

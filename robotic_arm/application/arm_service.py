@@ -6,11 +6,20 @@ from robotic_arm.domain.motion_step import MotionStep
 from robotic_arm.ports.arm_controller import ArmController
 
 
+from robotic_arm.domain.arm_space import ArmWaypoint
+from robotic_arm.domain.gripper_state import GripperState
+
+
 class ArmService:
     """Casos de uso del brazo que se van a consumir."""
 
-    def __init__(self, arm_factory: Callable[[str], ArmController]) -> None:
+    def __init__(
+        self,
+        arm_factory: Callable[[str], ArmController],
+        kinematics: object | None = None,
+    ) -> None:
         self._arm_factory = arm_factory
+        self._kinematics = kinematics
         self._arm: ArmController | None = None
 
     @property
@@ -62,3 +71,15 @@ class ArmService:
             raise DisconnectedArmException("El brazo no esta conectado")
 
         return self._arm
+
+    def compute_pose(self, waypoint: ArmWaypoint, gripper: GripperState = GripperState.OPEN) -> ArmPosition:
+        """Dry run: the servo angles for a waypoint, without moving anything."""
+        if self._kinematics is None:
+            raise NotImplementedError("Cinemática no configurada")
+        return self._kinematics.inverse(waypoint, gripper)
+
+    def move_to_waypoint(self, waypoint: ArmWaypoint, gripper: GripperState = GripperState.OPEN) -> ArmPosition:
+        """Solves the pose first and only then moves, so a rejected point sends nothing to the arm."""
+        pose = self.compute_pose(waypoint, gripper)
+        self._require_arm().move_to(pose)
+        return pose

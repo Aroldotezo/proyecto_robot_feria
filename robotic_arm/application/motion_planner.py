@@ -97,11 +97,11 @@ class MotionPlanner:
                 )
 
         # Cálculo dinámico de alcance: adapta S2 y S3 según la distancia del objeto (y)
-        # S2 incrementa hacia adelante (y cercano ~0.05 → 120°; y lejano ~0.45 → 132°)
-        # S3 decrementa hacia la mesa (y cercano → 75°; y lejano → 66°)
+        # S2 decrece hacia adelante (y cercano ~0.05 → 56°; y lejano ~0.45 → 44°)
+        # S3 decrece hacia la mesa (y cercano → 76°; y lejano → 66°)
         t = max(0.0, min(1.0, object_position.y / 0.46))
-        dyn_s2 = int(round(120 + t * 12))
-        dyn_s3 = int(round(75 - t * 9))
+        dyn_s2 = max(38, int(round(56 - t * 12)))
+        dyn_s3 = int(round(76 - t * 10))
         custom_grasp = ShoulderElbowPose(s2=dyn_s2, s3=dyn_s3)
 
         return self._build_sequence(pick_s1, drop_s1, custom_grasp=custom_grasp)

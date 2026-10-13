@@ -76,8 +76,30 @@ class DetectionController(QObject):
 
         panel.arm_tracking_toggled.connect(self._on_arm_tracking_toggled)
         panel.confidence_changed.connect(self._on_confidence_changed)
+        panel.manual_pick_requested.connect(self._on_manual_pick_requested)
+
+        self._latest_z: float = 15.0  # Altura por defecto en mm sobre la mesa
 
     # -------------------------------------------------------------- public
+
+    def on_side_frame_available(self, frame) -> None:
+        """Procesa frame de cámara lateral para estimar altura Z del objeto sobre la mesa."""
+        try:
+            import cv2
+            import numpy as np
+            # Detección simple y veloz de silueta por contraste sobre fondo
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+            _, thresh = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if contours:
+                c = max(contours, key=cv2.contourArea)
+                if cv2.contourArea(c) > 400:
+                    x, y, w, h = cv2.boundingRect(c)
+                    # Relación de altura en píxeles a mm (480 px ≈ 240 mm → ~0.5 mm/px)
+                    self._latest_z = max(5.0, min(80.0, float(h * 0.45)))
+        except Exception:
+            pass
 
     def on_frame_available(self, frame) -> None:
         """Called from the camera controller when a new frame is available.
@@ -92,6 +114,21 @@ class DetectionController(QObject):
         worker.signals.failed.connect(self._on_pipeline_failed)
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
+
+    def _on_manual_pick_requested(self) -> None:
+        """Fuerza la ejecución inmediata de Pick & Place si hay un objeto detectado."""
+        if self._arm_busy:
+            self.status_message.emit("El brazo ya está en movimiento...")
+            return
+        target = self._tracked or (self._latest_infos[0] if self._latest_infos else None)
+        if target is None:
+            self.status_message.emit("No hay ningún objeto detectado para recoger.")
+            return
+        if not self._arm_service.connected:
+            self.status_message.emit("Conecta el brazo antes de ejecutar Pick & Place.")
+            return
+        self.status_message.emit("Iniciando Pick & Place manual...")
+        self._execute_pick_and_place(target)
 
     def stop(self) -> None:
         """Clear detections when the camera stops."""

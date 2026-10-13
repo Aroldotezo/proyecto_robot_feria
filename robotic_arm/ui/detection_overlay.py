@@ -1,25 +1,10 @@
 """Overlay visual para detecciones de YOLO: bounding boxes, clase, confianza, centro y coordenadas."""
 
+from robotic_arm.ui.detection_info import DetectionInfo
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-
-from robotic_arm.domain.arm_space import ArmPoint
-from robotic_arm.domain.camera.detection import Detection
-from robotic_arm.domain.geometry import NormalizedPoint
-
-
-@dataclass(frozen=True, slots=True)
-class DetectionInfo:
-    """All computed information about a single detection for display and tracking."""
-
-    detection: Detection
-    normalized_center: NormalizedPoint
-    arm_point: ArmPoint | None
-    destination_label: str | None
-    category_id: str | None
-    is_tracked: bool = False
 
 
 class DetectionOverlay:
@@ -93,8 +78,13 @@ class DetectionOverlay:
         det = info.detection
         lines: list[str] = []
 
-        # Line 1: class + confidence
-        class_label = det.clase.value.upper()
+        # Line 1: specific object name + category + confidence
+        category_label = det.clase.value.upper()
+        if det.label:
+            object_name = det.label.replace("_", " ").upper()
+            class_label = f"{object_name} [{category_label}]"
+        else:
+            class_label = category_label
         conf = f"{det.reliability:.0%}"
         tracked_marker = " ★" if info.is_tracked else ""
         lines.append(f"{class_label} {conf}{tracked_marker}")

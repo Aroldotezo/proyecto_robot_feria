@@ -35,13 +35,19 @@ class YoloDetector(Detector):
         self._confidence = max(0.0, min(1.0, value))
 
     def detect(self, frame: NDArray[np.uint8]) -> list[Detection]:
-        results = self._model.predict(
-            source=frame,
-            conf=self._confidence,
-            verbose=False,
-        )
+        import torch
 
         detections: list[Detection] = []
+        try:
+            with torch.inference_mode():
+                results = self._model.predict(
+                    source=frame,
+                    conf=self._confidence,
+                    verbose=False,
+                )
+        except Exception as e:
+            # Capturar errores transitorios de PyTorch/TorchOps para que el hilo de Qt no falle
+            return detections
 
         for result in results:
             if result.boxes is None:
@@ -70,6 +76,7 @@ class YoloDetector(Detector):
                         y=int(y1),
                         width=int(x2 - x1),
                         height=int(y2 - y1),
+                        label=class_name,
                     )
                 )
 

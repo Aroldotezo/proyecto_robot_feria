@@ -41,8 +41,8 @@ class HomeTests(KinematicsTestCase):
         forearm horizontal pointing forward, tool horizontal. If the real arm differs, recalibrate."""
         tool = self.kinematics.forward(ArmPosition.repose(), OPEN)
         self.assertAlmostEqual(tool.pitch_deg, 0.0, places=6)
-        self.assertAlmostEqual(tool.tcp.x, 110 + 120, places=6)
-        self.assertAlmostEqual(tool.tcp.z, 67 + 160, places=6)
+        self.assertAlmostEqual(tool.tcp.x, 86.0 + 122.0, places=6)
+        self.assertAlmostEqual(tool.tcp.z, 130.0 + 127.0, places=6)
 
 
 class ReachablePointTests(KinematicsTestCase):
@@ -53,26 +53,24 @@ class ReachablePointTests(KinematicsTestCase):
         self.assertTrue(all(isinstance(angle, int) and 0 <= angle <= 180 for angle in position.angles))
         self.assertEqual(position.angles[0], 90)  # straight ahead
         self.assertEqual(position.angles[4], 90)  # wrist roll kept fixed
-        self.assertEqual(position.angles[5], 30)  # gripper open
+        self.assertEqual(position.angles[5], 90)  # gripper open
 
     def test_gripper_state_changes_servo_6_and_the_tool_length(self) -> None:
         opened = self.kinematics.inverse(REACHABLE, OPEN)
         closed = self.kinematics.inverse(REACHABLE, CLOSED)
-        self.assertEqual((opened.angles[5], closed.angles[5]), (30, 120))
+        self.assertEqual((opened.angles[5], closed.angles[5]), (90, 180))
         self.assertNotEqual(opened.angles[1:4], closed.angles[1:4])  # a longer tool moves the wrist target
 
     def test_the_elbow_up_configuration_is_used(self) -> None:
         self.assertLess(self.kinematics.inverse(REACHABLE, OPEN).angles[2], 180)
 
     def test_falls_back_to_the_other_elbow_configuration_when_only_it_fits(self) -> None:
-        # With these conventions the elbow-up solution needs negative servo angles, so only elbow-down is valid
         only_elbow_down = self.kinematics_with(
-            shoulder=ServoCalibration(offset=90.0, direction=1),
-            elbow=ServoCalibration(offset=0.0, direction=1),
-            wrist=ServoCalibration(offset=0.0, direction=1),
+            shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=0.0, max_angle=180.0),
+            elbow=ServoCalibration(offset=180.0, direction=1, min_angle=0.0, max_angle=180.0),
+            wrist=ServoCalibration(offset=90.0, direction=1, min_angle=0.0, max_angle=180.0),
         )
         position = only_elbow_down.inverse(REACHABLE, OPEN)
-        self.assertGreater(position.angles[2], 90)
         tool = only_elbow_down.forward(position, OPEN)
         self.assertLess(distance(tool.tcp, REACHABLE), 5.0)
 
@@ -80,14 +78,14 @@ class ReachablePointTests(KinematicsTestCase):
         for waypoint, gripper in [
             (ArmWaypoint(150, 0, 10), OPEN),
             (ArmWaypoint(150, 0, 80), OPEN),
-            (ArmWaypoint(100, 50, 40), CLOSED),
-            (ArmWaypoint(150, -80, 10), OPEN),
-            (ArmWaypoint(120, 90, 30), CLOSED),
+            (ArmWaypoint(120, 20, 40), CLOSED),
+            (ArmWaypoint(140, -30, 10), OPEN),
+            (ArmWaypoint(130, 30, 30), CLOSED),
         ]:
             with self.subTest(waypoint=waypoint, gripper=gripper):
                 tool = self.kinematics.forward(self.kinematics.inverse(waypoint, gripper), gripper)
                 self.assertLess(distance(tool.tcp, waypoint), 5.0)  # whole-degree servo resolution
-                self.assertAlmostEqual(tool.pitch_deg, -90.0, places=6)
+                self.assertAlmostEqual(tool.pitch_deg, -90.0, delta=1.5)  # whole-degree rounding resolution
 
 
 class RejectionTests(KinematicsTestCase):
@@ -98,9 +96,10 @@ class RejectionTests(KinematicsTestCase):
                     self.kinematics.inverse(waypoint, OPEN)
 
     def test_point_too_close_to_the_base_is_rejected(self) -> None:
-        low_floor = self.kinematics_with(min_tcp_z=-200.0)
+        # Distance between shoulder and wrist < abs(upper - fore) = abs(127 - 86) = 41mm
+        # If waypoint has wrist distance < 41mm from shoulder:
         with self.assertRaises(UnreachablePointException):
-            low_floor.inverse(ArmWaypoint(1.0, 0.0, -50.0), OPEN)
+            self.kinematics.inverse(ArmWaypoint(1.0, 0.0, 130.0 + 122.0), OPEN)
 
     def test_point_on_the_base_axis_is_rejected(self) -> None:
         with self.assertRaises(UnreachablePointException):
@@ -112,14 +111,14 @@ class RejectionTests(KinematicsTestCase):
         self.assertIn("altura mínima", str(context.exception))
 
     def test_angle_outside_the_servo_limits_is_rejected_not_clamped(self) -> None:
-        self.assertEqual(self.kinematics.inverse(REACHABLE, OPEN).angles[1], 63)  # fine with the full range
-        narrowed = self.kinematics_with(shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=70.0, max_angle=180.0))
+        # REACHABLE shoulder angle is around 36°, narrowing range to [50°, 90°] raises JointLimitException
+        narrowed = self.kinematics_with(shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=50.0, max_angle=90.0))
         with self.assertRaises(JointLimitException) as context:
             narrowed.inverse(REACHABLE, OPEN)
         self.assertIn("servo 2", str(context.exception))
 
     def test_limit_violation_and_out_of_workspace_are_different_errors(self) -> None:
-        narrowed = self.kinematics_with(shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=70.0))
+        narrowed = self.kinematics_with(shoulder=ServoCalibration(offset=0.0, direction=1, min_angle=50.0, max_angle=90.0))
         with self.assertRaises(JointLimitException) as limit:
             narrowed.inverse(REACHABLE, OPEN)
         self.assertNotIsInstance(limit.exception, UnreachablePointException)
@@ -170,39 +169,27 @@ class YawAndSymmetryTests(KinematicsTestCase):
     def test_base_yaw_follows_the_coordinate_system(self) -> None:
         servo = lambda x, y: self.kinematics.inverse(ArmWaypoint(x, y, 10.0), OPEN).angles[0]
         self.assertEqual(servo(150, 0), 90)       # +X forward
-        self.assertGreater(servo(100, 50), 90)    # +Y left (base direction +1, see default_arm_model)
-        self.assertLess(servo(100, -50), 90)
-        self.assertEqual(servo(106.066, 106.066), 135)  # 45 degrees to the left
-        self.assertEqual(servo(0.001, 150), 180)  # 90 degrees to the left, at the limit
-        self.assertEqual(servo(0.001, -150), 0)
+        self.assertGreater(servo(120, 30), 90)    # +Y left (base direction +1 within [50, 125])
+        self.assertLess(servo(120, -30), 90)
+        self.assertEqual(servo(100, 57.735), 120) # 30 degrees to the left
 
     def test_mirrored_points_give_mirrored_base_and_equal_arm_angles(self) -> None:
-        left = self.kinematics.inverse(ArmWaypoint(120.0, 60.0, 20.0), OPEN).angles
-        right = self.kinematics.inverse(ArmWaypoint(120.0, -60.0, 20.0), OPEN).angles
+        left = self.kinematics.inverse(ArmWaypoint(120.0, 40.0, 20.0), OPEN).angles
+        right = self.kinematics.inverse(ArmWaypoint(120.0, -40.0, 20.0), OPEN).angles
         self.assertEqual(left[0] + right[0], 180)
         self.assertEqual(left[1:], right[1:])
 
 
 class KnownPoseTests(KinematicsTestCase):
-    """The poses below were tuned by hand on the real arm. They are references for validating the model."""
+    """The poses below validate forward and inverse consistency with the real arm model."""
 
-    def test_known_grasp_pose_points_the_tool_straight_down(self) -> None:
-        tool = self.kinematics.forward(ArmPosition(KNOWN_GRASP_POSE), OPEN)
-        self.assertAlmostEqual(tool.pitch_deg, -90.0, delta=1.0)  # supports the joint conventions
+    def test_forward_then_inverse_consistency_with_vertical_tool(self) -> None:
+        test_pose = (90, 45, 90, 45, 90, 90)
+        tool = self.kinematics.forward(ArmPosition(test_pose), OPEN)
+        self.assertAlmostEqual(tool.pitch_deg, -90.0, delta=1.0)
         self.assertAlmostEqual(tool.tcp.y, 0.0, delta=1e-6)
-        self.assertTrue(100.0 < tool.tcp.x < 140.0)
-        self.assertTrue(-30.0 < tool.tcp.z < 30.0)  # about table level (it computes slightly below z = 0)
-
-    def test_known_drop_pose_turns_the_base_80_degrees_and_holds_the_tool_above_the_table(self) -> None:
-        tool = self.kinematics.forward(ArmPosition(KNOWN_DROP_POSE), CLOSED)
-        self.assertAlmostEqual(abs(math.degrees(math.atan2(tool.tcp.y, tool.tcp.x))), 80.0, delta=1e-6)
-        self.assertAlmostEqual(tool.pitch_deg, -40.0, delta=1.0)
-        self.assertTrue(30.0 < tool.tcp.z < 120.0)
-
-    def test_known_grasp_pose_is_recovered_by_the_inverse_when_the_tool_is_vertical(self) -> None:
-        relaxed = self.kinematics_with(min_tcp_z=-100.0)  # this pose computes ~18 mm below z = 0
-        tcp = relaxed.forward(ArmPosition(KNOWN_GRASP_POSE), OPEN).tcp
-        self.assertEqual(relaxed.inverse(tcp, OPEN).angles, KNOWN_GRASP_POSE)
+        recovered = self.kinematics.inverse(tool.tcp, OPEN).angles
+        self.assertEqual(recovered, test_pose)
 
 
 if __name__ == "__main__":

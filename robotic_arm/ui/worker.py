@@ -1,11 +1,7 @@
+from robotic_arm.domain.worker_signals import WorkerSignals
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, QRunnable, Signal
-
-
-class WorkerSignals(QObject):
-    finished = Signal(object)  # resultado de la tarea
-    failed = Signal(str)       # mensaje de error
+from PySide6.QtCore import QRunnable
 
 
 class Worker(QRunnable):
@@ -19,7 +15,13 @@ class Worker(QRunnable):
     def run(self) -> None:
         try:
             result = self._task()
-        except Exception as e:  #Se bloquea la UI
-            self.signals.failed.emit(str(e))
+        except Exception as e:
+            try:
+                self.signals.failed.emit(str(e))
+            except RuntimeError:
+                pass  # El receptor de la señal ya fue destruido por cierre de ventana
         else:
-            self.signals.finished.emit(result)
+            try:
+                self.signals.finished.emit(result)
+            except RuntimeError:
+                pass

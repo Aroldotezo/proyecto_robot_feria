@@ -20,6 +20,7 @@ class DetectionPanel(QWidget):
     arm_tracking_toggled = Signal(bool)
     confidence_changed = Signal(float)
     manual_pick_requested = Signal()
+    servo_debug_requested = Signal()  # secuencia de debug: 90° → 40°
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -42,6 +43,14 @@ class DetectionPanel(QWidget):
         )
         self._manual_pick_button.clicked.connect(self.manual_pick_requested)
         tracking_layout.addWidget(self._manual_pick_button)
+
+        self._debug_button = QPushButton("🔧 Debug Servos (90° → -50°)")
+        self._debug_button.setMinimumHeight(34)
+        self._debug_button.setStyleSheet(
+            "background-color: #e67700; color: white; font-weight: bold; border-radius: 4px;"
+        )
+        self._debug_button.clicked.connect(self.servo_debug_requested)
+        tracking_layout.addWidget(self._debug_button)
 
         self._tracking_status = QLabel("El brazo NO se moverá automáticamente.")
         self._tracking_status.setWordWrap(True)

@@ -77,6 +77,7 @@ class DetectionController(QObject):
         panel.arm_tracking_toggled.connect(self._on_arm_tracking_toggled)
         panel.confidence_changed.connect(self._on_confidence_changed)
         panel.manual_pick_requested.connect(self._on_manual_pick_requested)
+        panel.servo_debug_requested.connect(self._on_servo_debug)
 
         self._latest_z: float = 15.0  # Altura por defecto en mm sobre la mesa
 
@@ -129,6 +130,33 @@ class DetectionController(QObject):
             return
         self.status_message.emit("Iniciando Pick & Place manual...")
         self._execute_pick_and_place(target)
+
+    def _on_servo_debug(self) -> None:
+        """Secuencia de debug físico: todos los servos a 90°, espera 3 s, todos a 40°.
+        Permite verificar visualmente la dirección de cada servo sin necesidad de tracking.
+        """
+        if self._arm_busy:
+            self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
+            return
+        if not self._arm_service.connected:
+            self.status_message.emit("⚠ Conecta el brazo primero (debug requiere conexión).")
+            return
+        self._arm_busy = True
+        self.status_message.emit("🔧 Debug: enviando todos los servos a 90°...")
+
+        def _run_debug() -> None:
+            import time
+            from robotic_arm.domain.camera.arm_position import ArmPosition
+            arm = self._arm_service._require_arm()  # acceso directo para debug
+            arm.move_to(ArmPosition((90, 90, 90, 90, 90, 90)))
+            time.sleep(3.0)
+            arm.move_to(ArmPosition((40, 40, 40, 40, 40, 40)))
+
+        worker = Worker(_run_debug)
+        worker.signals.finished.connect(self._on_debug_finished)
+        worker.signals.failed.connect(self._on_arm_failed)
+        from PySide6.QtCore import QThreadPool
+        QThreadPool.globalInstance().start(worker)
 
     def stop(self) -> None:
         """Clear detections when the camera stops."""
@@ -320,6 +348,11 @@ class DetectionController(QObject):
     def _on_arm_finished(self, _result: object) -> None:
         self._arm_busy = False
         self.status_message.emit("Secuencia de brazo completada")
+
+    @Slot(object)
+    def _on_debug_finished(self, _result: object) -> None:
+        self._arm_busy = False
+        self.status_message.emit("🔧 Debug completado: todos los servos llegaron a 40°. Observa el resultado físico.")
 
     @Slot(str)
     def _on_arm_failed(self, message: str) -> None:

@@ -131,7 +131,7 @@ class DetectionController(QObject):
             self.status_message.emit("Conecta el brazo antes de ejecutar Pick & Place.")
             return
         self.status_message.emit("Iniciando Pick & Place manual...")
-        self._execute_pick_and_place(target)
+        self._execute_pick_and_place(target, is_manual=True)
 
     def _on_servo_debug(self) -> None:
 
@@ -161,32 +161,36 @@ class DetectionController(QObject):
         QThreadPool.globalInstance().start(worker)
 
     def _on_grasp_test(self) -> None:
-        """Test DIRECTO: S2 decrementa paso a paso (90→65→55→50) con S3=90 fijo.
-        Si el brazo va hacia ADELANTE, S2 decreciente = correcto.
-        Si se encoge/retrae, hay un problema de hardware o firmware."""
+        """Prueba física de GRASP calculada por el MotionPlanner a r = 130 mm."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
         if not self._arm_service.connected:
             self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
             return
+        radius, grasp_z = 130.0, 20.0
+        try:
+            grasp, hover = self._planner.approach_stages(radius, grasp_z)
+        except ValueError as e:
+            self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
+            return
         self._arm_busy = True
+        opened = self._planner.config.gripper_open_angle
+        hover_pose = self._planner.build_pose(90, hover, opened)
+        grasp_pose = self._planner.build_pose(90, grasp, opened)
         self.status_message.emit(
-            "🔧 TEST DIRECTO S2: 90→65→55→50→55→65→90 (S3=90 fijo, S4=180, S5=150, S6=30). "
-            "Observa si el brazo va hacia ADELANTE cuando S2 baja."
+            f"⤵ Probando GRASP (r={radius:.0f} mm): arriba S2/S3/S4 = {hover.s2}/{hover.s3}/{hover.s4}° "
+            f"→ abajo {grasp.s2}/{grasp.s3}/{grasp.s4}°"
         )
 
         def _run_grasp() -> None:
             import time
-            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
-            # Secuencia fija sin cálculos: S2 decrementa, todo lo demás fijo
-            # S1=90(centro), S3=90(neutro), S4=180(garra abajo), S5=150, S6=30(abierta)
-            for s2 in (90, 65, 55, 50, 55, 65, 90):
-                pose = ArmPosition((90, s2, 90, 180, 150, 30))
-                log.info(">>> TEST DIRECTO: enviando S2=%d  (pose completa: %s)", s2, pose.angles)
-                arm.move_to(pose)
-                time.sleep(2.5)
+            arm.move_to(hover_pose)
+            time.sleep(2.0)
+            arm.move_to(grasp_pose)
+            time.sleep(3.0)
+            arm.move_to(hover_pose)
 
         worker = Worker(_run_grasp)
         worker.signals.finished.connect(self._on_arm_finished)
@@ -371,7 +375,7 @@ class DetectionController(QObject):
 
     # -------------------------------------------------------------- arm movement
 
-    def _execute_pick_and_place(self, info: DetectionInfo) -> None:
+    def _execute_pick_and_place(self, info: DetectionInfo, is_manual: bool = False) -> None:
         """Plans and executes the pick-and-place for the tracked object.
         Safety checks: validates ArmPoint, category, calibration, and joint limits.
         The actual movement runs in a background thread.
@@ -383,6 +387,8 @@ class DetectionController(QObject):
         profile = self._calibration.profile
         if not profile.evaluation_zone.region.contains(info.normalized_center):
             log.warning("Tracked object outside evaluation zone, skipping movement")
+            if is_manual:
+                self.status_message.emit("⚠ El objeto está FUERA del recuadro amarillo (Evaluation zone).")
             return
 
         # Plan the sequence
@@ -401,11 +407,11 @@ class DetectionController(QObject):
         # Check arm connection
         if not self._arm_service.connected:
             log.warning("ARM TRACKING ON but arm not connected")
-            self.status_message.emit("ARM TRACKING ON pero el brazo no está conectado")
+            self.status_message.emit("El brazo no está conectado por serial")
             return
 
-        # Double-check the tracking switch right before executing
-        if not self._arm_tracking_enabled:
+        # Double-check the tracking switch right before executing (ignored for manual pick)
+        if not is_manual and not self._arm_tracking_enabled:
             return
 
         self._arm_busy = True

@@ -44,6 +44,13 @@ class PhysicalArmConfig:
     gripper_open_angle: int = 30             # S6
     gripper_closed_angle: int = 120          # S6
     grasp_s2_min_limit: int = 45             # S2 must never go below this in the grasp zone
+    s3_reach_near: int = 100                 # S3 en radio cercano (~110 mm)
+    s3_reach_far: int = 118                  # S3 en radio lejano (~195 mm)
+    s2_grasp_base: int = 52                  # S2 base para agarre (50-60°)
+    min_reach_radius: float = 90.0           # Radio mínimo permitido (mm)
+    max_reach_radius: float = 210.0          # Radio máximo alcanzable (mm)
+    near_reach_radius: float = 110.0         # Cota inferior de interpolación lineal (mm)
+    far_reach_radius: float = 195.0          # Cota superior de interpolación lineal (mm)
 
     def __post_init__(self) -> None:
         for name, angle in (

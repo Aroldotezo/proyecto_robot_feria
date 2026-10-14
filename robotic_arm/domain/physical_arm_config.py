@@ -6,13 +6,20 @@ from robotic_arm.domain.servo_calibration import ServoCalibration
 
 @dataclass(frozen=True, slots=True)
 class ShoulderElbowPose:
-    """Servo angles of the shoulder (S2) and the elbow (S3) for one stage of the manipulation."""
+    """Servo angles of the shoulder (S2), the elbow (S3) and, optionally, the wrist pitch (S4).
+
+    s4=None means "tool pointing straight down": the planner derives it as 180 - s2 - s3.
+    """
 
     s2: int
     s3: int
+    s4: int | None = None
 
     def __post_init__(self) -> None:
-        for name, angle in (("S2", self.s2), ("S3", self.s3)):
+        angles = [("S2", self.s2), ("S3", self.s3)]
+        if self.s4 is not None:
+            angles.append(("S4", self.s4))
+        for name, angle in angles:
             if not 0 <= angle <= 180:
                 raise ValueError(f"{name} must be within 0..180, got {angle}")
 

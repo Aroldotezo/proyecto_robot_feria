@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 # Evita rechazos espurios cuando el centro de la detección cae exactamente en el borde del recuadro.
 _EVAL_ZONE_MARGIN = 0.02
 
+_WRIST_MIN, _WRIST_MAX = 0, 175   
+_GRASP_LIFT_MM = 15.0
 
 class MotionPlanner:
     """Plans the pick-and-place sequence using physical kinematics and calibrated parameters.
@@ -49,23 +51,8 @@ class MotionPlanner:
         category_id: str,
         target_z: float | None = None,
     ) -> tuple[MotionStep, ...]:
-        """Plans the full pick-and-place sequence.
-
-        Tolerant fallback behaviour:
-        - A ±EVAL_ZONE_MARGIN slack is applied to the evaluation zone check so that
-          detections at the very edge of the rectangle are not rejected.
-        - If the pick or drop angle is outside the servo range, the angle is clamped
-          to the nearest limit and a WARNING is logged (no exception is raised).
-        - If inverse kinematics fails (UnreachablePointException / JointLimitException),
-          the operation continues using the preset S2/S3 poses; a WARNING is logged.
-
-        Raises:
-            ValueError: object outside the evaluation zone (with margin) or unknown category.
-            CalibrationException: no calibration is available.
-        """
         profile = self._calibration.profile
         eval_region = profile.evaluation_zone.region
-        # Expanded check: allow the detection center to be slightly outside the drawn rectangle
         expanded_x = max(0.0, eval_region.x - _EVAL_ZONE_MARGIN)
         expanded_y = max(0.0, eval_region.y - _EVAL_ZONE_MARGIN)
         expanded_w = min(1.0 - expanded_x, eval_region.width + 2 * _EVAL_ZONE_MARGIN)
@@ -78,33 +65,40 @@ class MotionPlanner:
             raise ValueError("El objeto está fuera de la zona de evaluación")
 
         destination = profile.destination_for(category_id)
-
         arm_point = self._calibration.image_to_arm(object_position)
         pick_s1 = self._safe_base_angle(arm_point, label="pick")
         drop_s1 = self._safe_drop_base_angle(category_id, destination)
 
-        # Si hay cinemática inversa configurada, intentar validarla; si falla, continuar con poses preestablecidas
-        if self._kinematics is not None:
-            z = target_z if target_z is not None else 10.0
-            waypoint = ArmWaypoint(arm_point.x, arm_point.y, z)
-            try:
-                self._kinematics.inverse(waypoint)
-            except (UnreachablePointException, JointLimitException) as ik_err:
-                log.warning(
-                    "⚠ IK fallback: el punto (%.1f, %.1f, %.1f) mm no es alcanzable con precisión "
-                    "(%s). El brazo usará las poses S2/S3 fijas y avanzará hasta el límite.",
-                    arm_point.x, arm_point.y, z, ik_err,
-                )
+        # S2/S3/S4 salen de la cinemática inversa en el plano vertical del objeto (y=0: la base no cuenta aquí).
+        radius = math.hypot(arm_point.x, arm_point.y)
+        object_height = target_z if target_z is not None else 20.0
+        grasp_z = max(10.0, 0.5 * object_height)  # agarra a media altura del objeto
+        grasp = self._stage_at(radius, grasp_z)
+        lift = self._stage_at(radius, grasp_z + _GRASP_LIFT_MM)
 
-        # Cálculo dinámico de alcance: adapta S2 y S3 según la distancia del objeto (y)
-        # S2 decrece hacia adelante (y cercano ~0.05 → 56°; y lejano ~0.45 → 44°)
-        # S3 decrece hacia la mesa (y cercano → 76°; y lejano → 66°)
-        t = max(0.0, min(1.0, object_position.y / 0.46))
-        dyn_s2 = max(38, int(round(56 - t * 12)))
-        dyn_s3 = int(round(76 - t * 10))
-        custom_grasp = ShoulderElbowPose(s2=dyn_s2, s3=dyn_s3)
+        return self._build_sequence(pick_s1, drop_s1, grasp=grasp, lift=lift)
 
-        return self._build_sequence(pick_s1, drop_s1, custom_grasp=custom_grasp)
+    @staticmethod
+    def _vertical_wrist(s2: int, s3: int) -> int:
+        """S4 that keeps the tool pointing straight down for a given S2/S3 (checked against the taught pose 60/50/70)."""
+        return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
+
+    def _stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
+        """Inverse kinematics for a point at `radius` mm from the base axis and `z` mm above the table.
+        An unreachable point is rejected: it must never fall back to a folded preset pose."""
+        if self._kinematics is None:
+            raise ValueError("Sin cinemática configurada no se puede calcular el alcance")
+        try:
+            angles = self._kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
+        except (UnreachablePointException, JointLimitException) as e:
+            raise ValueError(f"Objeto fuera de alcance (r = {radius:.0f} mm, z = {z:.0f} mm): {e}") from e
+        s2, s3, s4 = angles[1], angles[2], angles[3]
+        if s2 < self._config.grasp_s2_min_limit:
+            raise ValueError(
+                f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
+            )
+        return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
+
 
     def base_angle_for(self, point: ArmPoint) -> int:
         """S1 for a position on the work plane (arm frame, mm). Never clamped: out of range is an error."""
@@ -178,25 +172,29 @@ class MotionPlanner:
             return None
 
     def _build_sequence(
-        self, pick_s1: int, drop_s1: int, custom_grasp: ShoulderElbowPose | None = None
+        self,
+        pick_s1: int,
+        drop_s1: int,
+        grasp: ShoulderElbowPose,
+        lift: ShoulderElbowPose,
     ) -> tuple[MotionStep, ...]:
         config = self._config
         opened, closed = config.gripper_open_angle, config.gripper_closed_angle
-        grasp_stage = custom_grasp or config.grasp
 
         def pose(s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
-            return ArmPosition((s1, stage.s2, stage.s3, config.wrist_pitch_angle, config.wrist_roll_angle, gripper))
+            s4 = stage.s4 if stage.s4 is not None else self._vertical_wrist(stage.s2, stage.s3)
+            return ArmPosition((s1, stage.s2, stage.s3, s4, config.wrist_roll_angle, gripper))
 
         steps = [MotionStep(MotionAction.GO_HOME, ArmPosition.repose(), "Ir a la posición inicial (HOME)")]
 
         def move(note: str, position: ArmPosition) -> None:
-            if position != steps[-1].position:  # skip a step that would not move anything
+            if position != steps[-1].position:
                 steps.append(MotionStep(MotionAction.MOVE_TO, position, note))
 
         move(f"Girar la base hacia el objeto (S1 = {pick_s1}°) con el brazo elevado", pose(pick_s1, config.travel, opened))
-        move("Aproximar: bajar a la zona de agarre", pose(pick_s1, grasp_stage, opened))
-        move("Elevar ligeramente antes de cerrar", pose(pick_s1, config.lift, opened))
-        steps.append(MotionStep(MotionAction.CLOSE_GRIPPER, pose(pick_s1, config.lift, closed), "Cerrar la garra (S1, S2 y S3 no cambian)"))
+        move("Aproximar: bajar a la zona de agarre", pose(pick_s1, grasp, opened))
+        move("Elevar ligeramente antes de cerrar", pose(pick_s1, lift, opened))
+        steps.append(MotionStep(MotionAction.CLOSE_GRIPPER, pose(pick_s1, lift, closed), "Cerrar la garra (S1, S2 y S3 no cambian)"))
         move("Elevar con el objeto", pose(pick_s1, config.travel, closed))
         move(f"Girar la base hacia el destino (S1 = {drop_s1}°)", pose(drop_s1, config.travel, closed))
         move("Bajar para soltar", pose(drop_s1, config.drop, closed))

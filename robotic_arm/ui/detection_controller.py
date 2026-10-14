@@ -385,7 +385,7 @@ class DetectionController(QObject):
         # Plan the sequence
         try:
             steps = self._planner.plan_pick_and_place(
-                info.normalized_center, info.category_id
+                info.normalized_center, info.category_id, target_z=self._latest_z
             )
         except (ValueError, CalibrationException, JointLimitException) as e:
             log.warning("Cannot plan pick-and-place: %s", e)

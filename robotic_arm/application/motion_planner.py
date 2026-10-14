@@ -22,12 +22,13 @@ log = logging.getLogger(__name__)
 # Evita rechazos espurios cuando el centro de la detección cae exactamente en el borde del recuadro.
 _EVAL_ZONE_MARGIN = 0.02
 
-_WRIST_MIN, _WRIST_MAX = 0, 175   
-_GRASP_LIFT_MM = 15.0
+_WRIST_MIN, _WRIST_MAX = 0, 175  # S4 physical limits
+_HOVER_OFFSETS_MM = (60.0, 45.0, 30.0)  # heights above the grasp point to hover at, tried in order
+
 
 class MotionPlanner:
-    """Plans the pick-and-place sequence using physical kinematics and calibrated parameters.
-    Can operate with physical preset poses or compute dynamic inverse kinematics targets."""
+    """Plans the pick-and-place sequence with inverse kinematics: hover over the object at its own radius,
+    come straight down, grasp, go straight up, turn the base and release at the taught drop pose."""
 
     def __init__(
         self,
@@ -44,7 +45,7 @@ class MotionPlanner:
         return self._config
 
     @property
-    def kinematics(self) -> ArmKinematics | None:
+    def kinematics(self) -> ArmKinematics:
         return self._kinematics
 
     def plan_pick_and_place(
@@ -53,6 +54,12 @@ class MotionPlanner:
         category_id: str,
         target_z: float | None = None,
     ) -> tuple[MotionStep, ...]:
+        """Plans the full pick-and-place sequence.
+
+        Raises:
+            ValueError: object outside the evaluation zone (with margin), unknown category, or out of reach.
+            CalibrationException: no calibration is available.
+        """
         profile = self._calibration.profile
         eval_region = profile.evaluation_zone.region
         expanded_x = max(0.0, eval_region.x - _EVAL_ZONE_MARGIN)
@@ -71,40 +78,53 @@ class MotionPlanner:
         pick_s1 = self._safe_base_angle(arm_point, label="pick")
         drop_s1 = self._safe_drop_base_angle(category_id, destination)
 
-        # S2 (con S3 fijo) y S4 salen de la cinemática en el plano vertical del objeto.
+        # S2, S3 y S4 salen de la cinemática en el plano vertical del objeto; la altura viene de la cámara lateral.
         radius = math.hypot(arm_point.x, arm_point.y)
         object_height = target_z if target_z is not None else 20.0
         grasp_z = max(10.0, 0.5 * object_height)  # agarra a media altura del objeto
         grasp = self.stage_at(radius, grasp_z)
-        lift = self.stage_at(radius, grasp_z + _GRASP_LIFT_MM)
+        hover = self.hover_stage_at(radius, grasp_z)
 
-        return self._build_sequence(pick_s1, drop_s1, grasp=grasp, lift=lift)
+        return self._build_sequence(pick_s1, drop_s1, grasp=grasp, hover=hover)
 
-    @staticmethod
-    def _vertical_wrist(s2: int, s3: int) -> int:
-        """S4 that keeps the tool pointing straight down for a given S2/S3 (checked against the taught pose 60/50/70)."""
-        return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
+    # ------------------------------------------------------------------ poses
 
     def stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
-        """S2/S4 for a point `radius` mm from the base axis and `z` mm above the table, with S3 held at the
-        taught grasp elbow. An unreachable point is rejected: it must never fall back to a folded preset pose."""
-        elbow = self._config.grasp.s3
+        """S2/S3/S4 for a point `radius` mm from the base axis and `z` mm above the table, tool pointing down.
+        An unreachable point is rejected: it must never fall back to a folded preset pose."""
         try:
-            s2, s4 = self._kinematics.inverse_with_fixed_elbow(radius, z, elbow)
+            angles = self._kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
         except (UnreachablePointException, JointLimitException) as e:
             raise ValueError(f"Objeto fuera de alcance (r = {radius:.0f} mm, z = {z:.0f} mm): {e}") from e
+        s2, s3, s4 = angles[1], angles[2], angles[3]
         if s2 < self._config.grasp_s2_min_limit:
             raise ValueError(
                 f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
             )
-        return ShoulderElbowPose(s2=s2, s3=elbow, s4=s4)
+        return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
 
+    def hover_stage_at(self, radius: float, grasp_z: float) -> ShoulderElbowPose:
+        """Same radius as the grasp, higher up: the arm comes down (or goes back up) in a straight vertical line.
+        Tries the highest hover that is reachable, so a far object still gets a shorter, valid hover."""
+        last_error: ValueError | None = None
+        for offset in _HOVER_OFFSETS_MM:
+            try:
+                return self.stage_at(radius, grasp_z + offset)
+            except ValueError as e:
+                last_error = e
+        raise ValueError(f"No hay una altura de aproximación alcanzable sobre el objeto: {last_error}")
 
     def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
         """Full 6-servo pose. S4 keeps the tool pointing straight down unless the stage defines it."""
         s4 = stage.s4 if stage.s4 is not None else self._vertical_wrist(stage.s2, stage.s3)
         return ArmPosition((s1, stage.s2, stage.s3, s4, self._config.wrist_roll_angle, gripper))
 
+    @staticmethod
+    def _vertical_wrist(s2: int, s3: int) -> int:
+        """S4 that keeps the tool pointing straight down for a given S2/S3 (checked against the taught pose 60/50/70)."""
+        return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
+
+    # ------------------------------------------------------------------ base angle
 
     def base_angle_for(self, point: ArmPoint) -> int:
         """S1 for a position on the work plane (arm frame, mm). Never clamped: out of range is an error."""
@@ -177,19 +197,18 @@ class MotionPlanner:
         except (CalibrationException, JointLimitException, ValueError):
             return None
 
+    # ------------------------------------------------------------------ sequence
+
     def _build_sequence(
         self,
         pick_s1: int,
         drop_s1: int,
         grasp: ShoulderElbowPose,
-        lift: ShoulderElbowPose,
+        hover: ShoulderElbowPose,
     ) -> tuple[MotionStep, ...]:
         config = self._config
         opened, closed = config.gripper_open_angle, config.gripper_closed_angle
-
-        def pose(s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
-            s4 = stage.s4 if stage.s4 is not None else self._vertical_wrist(stage.s2, stage.s3)
-            return ArmPosition((s1, stage.s2, stage.s3, s4, config.wrist_roll_angle, gripper))
+        pose = self.build_pose
 
         steps = [MotionStep(MotionAction.GO_HOME, ArmPosition.repose(), "Ir a la posición inicial (HOME)")]
 
@@ -197,13 +216,12 @@ class MotionPlanner:
             if position != steps[-1].position:
                 steps.append(MotionStep(MotionAction.MOVE_TO, position, note))
 
-        move(f"Girar la base hacia el objeto (S1 = {pick_s1}°) con el brazo elevado", pose(pick_s1, config.travel, opened))
-        move("Aproximar: bajar a la zona de agarre", pose(pick_s1, grasp, opened))
-        move("Elevar ligeramente antes de cerrar", pose(pick_s1, lift, opened))
-        steps.append(MotionStep(MotionAction.CLOSE_GRIPPER, pose(pick_s1, lift, closed), "Cerrar la garra (S1, S2 y S3 no cambian)"))
-        move("Elevar con el objeto", pose(pick_s1, config.travel, closed))
-        move(f"Girar la base hacia el destino (S1 = {drop_s1}°)", pose(drop_s1, config.travel, closed))
+        move(f"Girar la base hacia el objeto (S1 = {pick_s1}°) y quedar sobre él", pose(pick_s1, hover, opened))
+        move("Bajar en vertical hasta el objeto", pose(pick_s1, grasp, opened))
+        steps.append(MotionStep(MotionAction.CLOSE_GRIPPER, pose(pick_s1, grasp, closed), "Cerrar la garra (S1, S2, S3 y S4 no cambian)"))
+        move("Subir con el objeto en vertical", pose(pick_s1, hover, closed))
+        move(f"Girar la base hacia el destino (S1 = {drop_s1}°)", pose(drop_s1, hover, closed))
         move("Bajar para soltar", pose(drop_s1, config.drop, closed))
-        steps.append(MotionStep(MotionAction.OPEN_GRIPPER, pose(drop_s1, config.drop, opened), "Abrir la garra (S1, S2 y S3 no cambian)"))
+        steps.append(MotionStep(MotionAction.OPEN_GRIPPER, pose(drop_s1, config.drop, opened), "Abrir la garra (S1, S2, S3 y S4 no cambian)"))
         move("Elevar tras soltar", pose(drop_s1, config.travel, opened))
         return tuple(steps)

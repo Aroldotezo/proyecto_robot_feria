@@ -160,42 +160,46 @@ class DetectionController(QObject):
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
 
+        
+# robotic_arm/ui/detection_controller.py
     def _on_grasp_test(self) -> None:
-        """Prueba física de GRASP: travel -> pose calculada por IK a un radio fijo -> travel."""
+        """Prueba física de GRASP: sobre el objeto -> bajar en vertical (IK) -> volver arriba, a r = 130 mm."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
         if not self._arm_service.connected:
             self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
             return
-        config = self._planner.config
+        radius, grasp_z = 130.0, 20.0
         try:
-            grasp = self._planner.stage_at(radius=120.0, z=20.0)
+            grasp = self._planner.stage_at(radius, grasp_z)
+            hover = self._planner.hover_stage_at(radius, grasp_z)
         except ValueError as e:
             self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
             return
         self._arm_busy = True
-        travel = config.travel
-        opened = config.gripper_open_angle
-        travel_pose = self._planner.build_pose(90, travel, opened)
+        opened = self._planner.config.gripper_open_angle
+        hover_pose = self._planner.build_pose(90, hover, opened)
         grasp_pose = self._planner.build_pose(90, grasp, opened)
-        self.status_message.emit(f"⤵ Probando GRASP (r=120 mm): S2={grasp.s2}°, S3={grasp.s3}°, S4={grasp_pose.angles[3]}°")
+        self.status_message.emit(
+            f"⤵ Probando GRASP (r={radius:.0f} mm): arriba S2/S3/S4 = {hover.s2}/{hover.s3}/{hover.s4}° "
+            f"→ abajo {grasp.s2}/{grasp.s3}/{grasp.s4}°"
+        )
 
         def _run_grasp() -> None:
             import time
             arm = self._arm_service._require_arm()
-            arm.move_to(travel_pose)
+            arm.move_to(hover_pose)
             time.sleep(2.0)
             arm.move_to(grasp_pose)
             time.sleep(3.0)
-            arm.move_to(travel_pose)
+            arm.move_to(hover_pose)
 
         worker = Worker(_run_grasp)
         worker.signals.finished.connect(self._on_arm_finished)
         worker.signals.failed.connect(self._on_arm_failed)
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
-
 
     def _on_drop_test(self) -> None:
         """Prueba física directa de la postura DROP (soltado en zona destino)."""
@@ -234,7 +238,7 @@ class DetectionController(QObject):
         worker.signals.finished.connect(self._on_arm_finished)
         worker.signals.failed.connect(self._on_arm_failed)
         from PySide6.QtCore import QThreadPool
-        QThreadPool.globalInstance().start(worker)
+        QThreadPool.globalInstance().start(worker) 
 
     def stop(self) -> None:
         """Clear detections when the camera stops."""

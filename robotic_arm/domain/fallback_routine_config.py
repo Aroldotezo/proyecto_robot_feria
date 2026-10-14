@@ -21,7 +21,7 @@ class FallbackRoutineConfig:
     
     Convenio de servos:
       S1: Base (60° = Inorgánico / 100° = Defectuoso / 140° = Orgánico)
-      S2: Hombro (decrece para bajar hacia adelante: 65° hover, 52° agarre, 45° soltado)
+      S2: Hombro (INCREMENTA para bajar hacia adelante: 90° home, 115° hover, 128° agarre, 135° tolva)
       S3: Codo (90° neutro, 105° extender para agarrar, 40° soltar en tolva)
       S4: Muñeca Pitch (180° = garra abajo)
       S5: Muñeca Roll (150° neutro)

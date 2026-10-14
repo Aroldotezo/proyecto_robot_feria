@@ -9,6 +9,9 @@ from robotic_arm.ports.arm_controller import ArmController
 from robotic_arm.domain.arm_space import ArmWaypoint
 from robotic_arm.domain.gripper_state import GripperState
 
+import logging
+
+log = logging.getLogger(__name__)
 
 class ArmService:
     """Casos de uso del brazo que se van a consumir."""
@@ -64,6 +67,11 @@ class ArmService:
             if on_step is not None:
                 on_step(index, len(steps), step)
 
+            s = step.position.angles
+            log.info(
+                "PASO %d/%d %-13s S1=%d S2=%d S3=%d S4=%d S5=%d S6=%d | %s",
+                index, len(steps), step.action.value, *s, step.note,
+            )
             arm.move_to(step.position)
 
     def _require_arm(self) -> ArmController:

@@ -104,6 +104,79 @@ class ArmKinematics:
             raise JointLimitException("Al redondear a grados enteros se excede un límite: " + "; ".join(late_problems))
         return ArmPosition((*rounded, model.wrist_roll_angle, self.gripper_angle(gripper)))
 
+
+    def inverse_with_fixed_elbow(
+        self,
+        radius: float,
+        z: float,
+        elbow_servo: int,
+        gripper: GripperState = GripperState.OPEN,
+    ) -> tuple[int, int]:
+        """(S2, S4) that put the TCP at `radius` mm from the base axis and `z` mm above the table while the
+        elbow (S3) stays at `elbow_servo`. The shoulder does the reaching; the wrist pitch absorbs the rest,
+        so the tool angle is whatever results. Never clamped: raises UnreachablePointException / JointLimitException.
+        """
+        model, geometry = self._model, self._model.geometry
+        if z < model.min_tcp_z - _EPSILON:
+            raise UnreachablePointException(
+                f"El punto está por debajo de la altura mínima segura (z = {z:.0f} mm, mínimo {model.min_tcp_z:.0f} mm)"
+            )
+        elbow = math.radians(model.elbow.to_mathematical(elbow_servo))
+        tool_length = geometry.tool_length(gripper)
+        upper, fore = geometry.shoulder_length, geometry.forearm_length
+
+        def wrist_at(shoulder_servo: float) -> tuple[float, float, float]:
+            shoulder = math.radians(model.shoulder.to_mathematical(shoulder_servo))
+            forearm = shoulder + elbow
+            return (
+                upper * math.cos(shoulder) + fore * math.cos(forearm),
+                geometry.base_height + upper * math.sin(shoulder) + fore * math.sin(forearm),
+                forearm,
+            )
+
+        def gap(shoulder_servo: float) -> float:
+            wrist_radius, wrist_height, _ = wrist_at(shoulder_servo)
+            return math.hypot(radius - wrist_radius, z - wrist_height) - tool_length
+
+        # Scan from the upright shoulder (S2 = 90) forward/down: the first sign change is the solution.
+        high = min(model.shoulder.to_servo(90.0), model.shoulder.max_angle)
+        low = model.shoulder.min_angle
+        step = 0.25
+        upper_bound = high
+        root: float | None = None
+        while upper_bound - step >= low - _EPSILON:
+            lower_bound = upper_bound - step
+            if gap(upper_bound) * gap(lower_bound) <= 0.0:
+                a, b = lower_bound, upper_bound
+                for _ in range(40):  # bisection
+                    mid = (a + b) / 2
+                    if gap(a) * gap(mid) <= 0.0:
+                        b = mid
+                    else:
+                        a = mid
+                root = (a + b) / 2
+                break
+            upper_bound = lower_bound
+        if root is None:
+            raise UnreachablePointException(
+                f"Fuera de alcance con el codo en S3 = {elbow_servo}°: el hombro (S2 entre {low:.0f}° y {high:.0f}°) "
+                f"no llega a r = {radius:.0f} mm, z = {z:.0f} mm"
+            )
+
+        shoulder_servo = round(root)
+        if not model.shoulder.allows(shoulder_servo):
+            raise JointLimitException(
+                f"servo 2 (hombro) necesitaría {shoulder_servo}° y su rango permitido es {low:.0f}°-{model.shoulder.max_angle:.0f}°"
+            )
+        wrist_radius, wrist_height, forearm = wrist_at(shoulder_servo)  # recomputed with the rounded S2
+        tool_angle = math.atan2(z - wrist_height, radius - wrist_radius)
+        wrist_servo = round(model.wrist.to_servo(_wrap(math.degrees(tool_angle - forearm))))
+        if not model.wrist.allows(wrist_servo):
+            raise JointLimitException(
+                f"servo 4 (muñeca) necesitaría {wrist_servo}° y su rango permitido es "
+                f"{model.wrist.min_angle:.0f}°-{model.wrist.max_angle:.0f}°"
+            )
+        return shoulder_servo, wrist_servo
     # ------------------------------------------------------------------ forward (validation)
 
     def forward(self, position: ArmPosition, gripper: GripperState) -> ToolPose:

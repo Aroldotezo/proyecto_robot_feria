@@ -82,6 +82,17 @@ class DetectionController(QObject):
         panel.servo_drop_test_requested.connect(self._on_drop_test)
 
         self._latest_z: float = 15.0  # Altura por defecto en mm sobre la mesa
+        self._latest_frame = None
+
+        # Cliente REST para registrar detecciones en Django
+        from robotic_arm.adapters.detection_api_client import DetectionApiClient
+        self._api_client = DetectionApiClient(parent=self)
+        self._api_client.post_success.connect(
+            lambda obj, cat, conf: self.status_message.emit(f"☁ Detección enviada a la web: {obj} ({cat}) {int(conf*100)}%")
+        )
+        self._api_client.post_failed.connect(
+            lambda err: log.warning("Fallo al registrar detección en API web: %s", err)
+        )
 
     # -------------------------------------------------------------- public
 
@@ -108,6 +119,7 @@ class DetectionController(QObject):
         """Called from the camera controller when a new frame is available.
         If a detection cycle is already running, the frame is dropped (latest-only semantics).
         """
+        self._latest_frame = frame
         if self._processing:
             return
         self._processing = True
@@ -131,12 +143,12 @@ class DetectionController(QObject):
             self.status_message.emit("Conecta el brazo antes de ejecutar Pick & Place.")
             return
         self.status_message.emit("Iniciando Pick & Place manual...")
-        self._execute_pick_and_place(target)
+        self._execute_pick_and_place(target, is_manual=True)
 
     def _on_servo_debug(self) -> None:
-        """Secuencia de debug físico: todos los servos a 90°, espera 3 s, todos a 40°.
-        Permite verificar visualmente la dirección de cada servo sin necesidad de tracking.
-        """
+
+        """Debug físico: solo S2, 90 -> 70 -> 50 -> 90, con los demás servos a 90°.
+        Si S2 decrece, el brazo debe inclinarse hacia adelante y BAJAR."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
@@ -144,15 +156,15 @@ class DetectionController(QObject):
             self.status_message.emit("⚠ Conecta el brazo primero (debug requiere conexión).")
             return
         self._arm_busy = True
-        self.status_message.emit("🔧 Debug: enviando todos los servos a 90°...")
+        self.status_message.emit("🔧 Debug S2: 90° → 70° → 50° → 90°. Observa si el brazo baja o sube.")
 
         def _run_debug() -> None:
             import time
             from robotic_arm.domain.camera.arm_position import ArmPosition
-            arm = self._arm_service._require_arm()  # acceso directo para debug
-            arm.move_to(ArmPosition((90, 90, 90, 90, 90, 90)))
-            time.sleep(3.0)
-            arm.move_to(ArmPosition((40, 40, 40, 40, 40, 40)))
+            arm = self._arm_service._require_arm()
+            for s2 in (90, 70, 50, 90):
+                arm.move_to(ArmPosition((90, s2, 90, 90, 90, 90)))
+                time.sleep(2.5)
 
         worker = Worker(_run_debug)
         worker.signals.finished.connect(self._on_debug_finished)
@@ -161,31 +173,36 @@ class DetectionController(QObject):
         QThreadPool.globalInstance().start(worker)
 
     def _on_grasp_test(self) -> None:
-        """Prueba física directa de la postura GRASP (aproximación hacia la mesa)."""
+        """Prueba física de GRASP calculada por el MotionPlanner a r = 130 mm."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
         if not self._arm_service.connected:
             self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
             return
+        radius, grasp_z = 130.0, 20.0
+        try:
+            grasp, hover = self._planner.approach_stages(radius, grasp_z)
+        except ValueError as e:
+            self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
+            return
         self._arm_busy = True
-        config = self._planner.config
-        grasp = config.grasp
-        travel = config.travel
-        self.status_message.emit(f"⤵ Probando GRASP: Travel (S2={travel.s2}°, S3={travel.s3}°) → Grasp (S2={grasp.s2}°, S3={grasp.s3}°)")
+        opened = self._planner.config.gripper_open_angle
+        hover_pose = self._planner.build_pose(90, hover, opened)
+        grasp_pose = self._planner.build_pose(90, grasp, opened)
+        self.status_message.emit(
+            f"⤵ Probando GRASP (r={radius:.0f} mm): arriba S2/S3/S4 = {hover.s2}/{hover.s3}/{hover.s4}° "
+            f"→ abajo {grasp.s2}/{grasp.s3}/{grasp.s4}°"
+        )
 
         def _run_grasp() -> None:
             import time
-            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
-            # 1. Travel pose inicial
-            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(hover_pose)
             time.sleep(2.0)
-            # 2. Bajar a Grasp
-            arm.move_to(ArmPosition((90, grasp.s2, grasp.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(grasp_pose)
             time.sleep(3.0)
-            # 3. Volver a Travel
-            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(hover_pose)
 
         worker = Worker(_run_grasp)
         worker.signals.finished.connect(self._on_arm_finished)
@@ -206,29 +223,31 @@ class DetectionController(QObject):
         drop = config.drop
         travel = config.travel
         drop_s1 = config.drop_base_angles.get("defective", 100)
-        self.status_message.emit(f"⤴ Probando DROP (S1={drop_s1}°, S2={drop.s2}°, S3={drop.s3}°)")
+        pose = self._planner.build_pose
+        closed, opened = config.gripper_closed_angle, config.gripper_open_angle
+        drop_s4 = pose(drop_s1, drop, closed).angles[3]
+        self.status_message.emit(f"⤴ Probando DROP (S1={drop_s1}°, S2={drop.s2}°, S3={drop.s3}°, S4={drop_s4}°)")
 
         def _run_drop() -> None:
             import time
-            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
             # 1. Travel al centro de drop
-            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            arm.move_to(pose(drop_s1, travel, closed))
             time.sleep(2.0)
             # 2. Bajar a drop
-            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            arm.move_to(pose(drop_s1, drop, closed))
             time.sleep(2.0)
             # 3. Abrir garra
-            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(pose(drop_s1, drop, opened))
             time.sleep(1.5)
             # 4. Volver a Travel
-            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(pose(drop_s1, travel, opened))
 
         worker = Worker(_run_drop)
         worker.signals.finished.connect(self._on_arm_finished)
         worker.signals.failed.connect(self._on_arm_failed)
         from PySide6.QtCore import QThreadPool
-        QThreadPool.globalInstance().start(worker)
+        QThreadPool.globalInstance().start(worker) 
 
     def stop(self) -> None:
         """Clear detections when the camera stops."""
@@ -351,6 +370,10 @@ class DetectionController(QObject):
         # Update panel info
         self._panel.set_detection_info(self._format_info(infos, tracked_info))
 
+        # Registro automático en la API Web (con cooldown) para el objeto dentro de la zona de evaluación
+        if tracked_info is not None and tracked_info.detection is not None:
+            self._api_client.try_log_detection(tracked_info.detection, frame=self._latest_frame)
+
         # Arm tracking logic
         if (
             self._arm_tracking_enabled
@@ -368,7 +391,7 @@ class DetectionController(QObject):
 
     # -------------------------------------------------------------- arm movement
 
-    def _execute_pick_and_place(self, info: DetectionInfo) -> None:
+    def _execute_pick_and_place(self, info: DetectionInfo, is_manual: bool = False) -> None:
         """Plans and executes the pick-and-place for the tracked object.
         Safety checks: validates ArmPoint, category, calibration, and joint limits.
         The actual movement runs in a background thread.
@@ -380,12 +403,14 @@ class DetectionController(QObject):
         profile = self._calibration.profile
         if not profile.evaluation_zone.region.contains(info.normalized_center):
             log.warning("Tracked object outside evaluation zone, skipping movement")
+            if is_manual:
+                self.status_message.emit("⚠ El objeto está FUERA del recuadro amarillo (Evaluation zone).")
             return
 
         # Plan the sequence
         try:
             steps = self._planner.plan_pick_and_place(
-                info.normalized_center, info.category_id
+                info.normalized_center, info.category_id, target_z=self._latest_z
             )
         except (ValueError, CalibrationException, JointLimitException) as e:
             log.warning("Cannot plan pick-and-place: %s", e)
@@ -398,11 +423,11 @@ class DetectionController(QObject):
         # Check arm connection
         if not self._arm_service.connected:
             log.warning("ARM TRACKING ON but arm not connected")
-            self.status_message.emit("ARM TRACKING ON pero el brazo no está conectado")
+            self.status_message.emit("El brazo no está conectado por serial")
             return
 
-        # Double-check the tracking switch right before executing
-        if not self._arm_tracking_enabled:
+        # Double-check the tracking switch right before executing (ignored for manual pick)
+        if not is_manual and not self._arm_tracking_enabled:
             return
 
         self._arm_busy = True

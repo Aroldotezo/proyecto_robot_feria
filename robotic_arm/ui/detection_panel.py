@@ -23,6 +23,7 @@ class DetectionPanel(QWidget):
     servo_debug_requested = Signal()        # todos a 90° → 40°
     servo_grasp_test_requested = Signal()   # prueba posición de agarre actual
     servo_drop_test_requested = Signal()    # prueba posición de soltado actual
+    web_stream_toggled = Signal(bool)       # switch de transmisión WebSocket
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -98,11 +99,53 @@ class DetectionPanel(QWidget):
         self._info_output.setFont(font)
         info_layout.addWidget(self._info_output)
 
+        # Transmisión Web (WebSocket hacia Django en Render)
+        web_group = QGroupBox("Transmisión Web (Dashboard Django)")
+        web_layout = QVBoxLayout(web_group)
+
+        self._web_stream_button = QPushButton("📡 STREAMING WEB: APAGADO")
+        self._web_stream_button.setCheckable(True)
+        self._web_stream_button.setChecked(False)
+        self._web_stream_button.setMinimumHeight(40)
+        self._update_web_stream_style(False)
+        self._web_stream_button.toggled.connect(self._on_web_stream_toggled)
+        web_layout.addWidget(self._web_stream_button)
+
+        self._web_stream_status = QLabel("Desconectado (wss://app-brazo-robot.onrender.com)")
+        self._web_stream_status.setWordWrap(True)
+        web_layout.addWidget(self._web_stream_status)
+
         layout = QVBoxLayout(self)
         layout.addWidget(tracking_group)
+        layout.addWidget(web_group)
         layout.addWidget(conf_group)
         layout.addWidget(info_group)
         layout.addStretch()
+
+    def set_web_stream_status(self, text: str) -> None:
+        self._web_stream_status.setText(text)
+
+    def set_web_streaming(self, active: bool) -> None:
+        if self._web_stream_button.isChecked() != active:
+            self._web_stream_button.setChecked(active)
+
+    def _on_web_stream_toggled(self, checked: bool) -> None:
+        self._update_web_stream_style(checked)
+        self.web_stream_toggled.emit(checked)
+
+    def _update_web_stream_style(self, active: bool) -> None:
+        if active:
+            self._web_stream_button.setText("📡 TRANSMITIENDO EN VIVO (CAM_01)")
+            self._web_stream_button.setStyleSheet(
+                "QPushButton { background-color: #0c8599; color: white; "
+                "font-size: 13px; font-weight: bold; border-radius: 6px; }"
+            )
+        else:
+            self._web_stream_button.setText("📡 STREAMING WEB: APAGADO")
+            self._web_stream_button.setStyleSheet(
+                "QPushButton { background-color: #495057; color: white; "
+                "font-size: 13px; font-weight: bold; border-radius: 6px; }"
+            )
 
     @property
     def arm_tracking_enabled(self) -> bool:

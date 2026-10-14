@@ -18,11 +18,20 @@ def create_default_physical_config() -> PhysicalArmConfig:
         grasp=ShoulderElbowPose(s2=50, s3=92, s4=180),     # S2 baja (dueño del movimiento), S3 casi no se mueve
         lift=ShoulderElbowPose(s2=60, s3=90, s4=180),      # Se eleva: S2 sube, S3 se queda en neutro
         travel=ShoulderElbowPose(s2=65, s3=90, s4=180),    # Postura de viaje: S2 arriba, S3 neutro
-        drop=ShoulderElbowPose(s2=40, s3=20, s4=180),      # Para soltar: S2 baja más, S3 sube (CONTEXT.md)
+        drop=ShoulderElbowPose(s2=40, s3=20, s4=180),      # Para soltar: S2 baja más, S3 sube
         drop_base_angles={"organic": 140, "defective": 100, "inorganic": 60},
         wrist_pitch_angle=180,
         wrist_roll_angle=150,
         gripper_open_angle=30,
         gripper_closed_angle=160,       # Cierre físico completo
-        grasp_s2_min_limit=45,          # CONTEXT.md: "Nunca bajar S2 por debajo de 45°"
+        grasp_s2_min_limit=45,          # Límite inferior seguro para S2
+
+        # --- PARÁMETROS HUMANOS DE ALCANCE Y ÁNGULOS (Modificar aquí si cambia el brazo) ---
+        s3_reach_near=100,              # S3 cuando el objeto está en el radio más cercano (~110 mm)
+        s3_reach_far=118,               # S3 cuando el objeto está en el radio más lejano (~195 mm)
+        s2_grasp_base=52,               # S2 base para agarre (rango 50-60°)
+        min_reach_radius=90.0,          # Radio mínimo en mm antes de rechazar
+        max_reach_radius=210.0,         # Radio máximo en mm antes de rechazar
+        near_reach_radius=110.0,        # Radio mm correspondiente a s3_reach_near
+        far_reach_radius=195.0,         # Radio mm correspondiente a s3_reach_far
     )

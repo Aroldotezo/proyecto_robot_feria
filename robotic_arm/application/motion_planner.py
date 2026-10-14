@@ -27,12 +27,6 @@ _WRIST_MIN, _WRIST_MAX = 0, 175  # S4 physical limits
 _HOVER_OFFSETS_MM = (50.0, 40.0, 30.0)  # heights above the grasp point to hover at, tried in order
 _TOOL_PITCHES_DEG = (-90.0, -80.0, -70.0, -60.0)  # -90 = vertical; tilts forward only when the reach needs it
 # Comfort zone: keep servos away from their stops, they stall and push against them there.
-_S3_MAX_COMFORT = 130
-
-# --- AJUSTAR con mediciones reales: S3 al agarrar un objeto cercano / lejano, y S2 base de agarre ---
-_S3_REACH_NEAR = 100   # S3 con el objeto en el radio mas cercano (~110 mm)
-_S3_REACH_FAR = 118    # S3 con el objeto en el radio mas lejano (~195 mm)
-_S2_GRASP_BASE = 52    # S2 de agarre (rango 50-60, nunca < 45)
 _S4_MIN_COMFORT, _S4_MAX_COMFORT = 15, 160
 
 
@@ -101,25 +95,27 @@ class MotionPlanner:
     def stage_at(self, radius: float, z: float, tool_pitch_deg: float = -90.0) -> ShoulderElbowPose:
         """S2/S3/S4 para una posición a distancia `radius` (mm) y altura `z` (mm).
 
-        Modelo físico (CONTEXT.md, validado en el brazo real):
+        Modelo físico desacoplado en PhysicalArmConfig:
           - S3 da el ALCANCE: INCREMENTA para extender hacia adelante (viaje ~90°, pickeo >100°).
-          - S2 solo regula la ALTURA: se mantiene en 50-60° y nunca baja de 45°.
-          - S4 = 180° fijo.
+          - S2 solo regula la ALTURA: se mantiene en 50-60° y nunca baja del límite seguro.
+          - S4 = fijo desde config (180°).
         """
-        if radius < 90.0:
-            raise ValueError(f"Objeto demasiado cerca de la base (r = {radius:.0f} mm)")
-        if radius > 210.0:
-            raise ValueError(f"Objeto fuera del alcance físico del brazo (r = {radius:.0f} mm > 210 mm)")
+        cfg = self._config
+        if radius < cfg.min_reach_radius:
+            raise ValueError(f"Objeto demasiado cerca de la base (r = {radius:.0f} mm < {cfg.min_reach_radius:.0f} mm)")
+        if radius > cfg.max_reach_radius:
+            raise ValueError(f"Objeto fuera del alcance físico del brazo (r = {radius:.0f} mm > {cfg.max_reach_radius:.0f} mm)")
 
-        t = max(0.0, min(1.0, (radius - 110.0) / 85.0))  # 0 = cerca, 1 = lejos
+        span = max(1.0, cfg.far_reach_radius - cfg.near_reach_radius)
+        t = max(0.0, min(1.0, (radius - cfg.near_reach_radius) / span))  # 0 = cerca, 1 = lejos
 
-        s3 = int(round(_S3_REACH_NEAR + t * (_S3_REACH_FAR - _S3_REACH_NEAR)))
+        s3 = int(round(cfg.s3_reach_near + t * (cfg.s3_reach_far - cfg.s3_reach_near)))
 
         z_adj = max(0.0, min(5.0, (z - 10.0) * 0.3))
-        s2 = int(round(_S2_GRASP_BASE + z_adj))
-        s2 = max(self._config.grasp_s2_min_limit, min(60, s2))
+        s2 = int(round(cfg.s2_grasp_base + z_adj))
+        s2 = max(cfg.grasp_s2_min_limit, min(60, s2))
 
-        s4 = self._config.wrist_pitch_angle
+        s4 = cfg.wrist_pitch_angle
         log.info("stage_at(r=%.0f, z=%.0f) -> S2=%d, S3=%d, S4=%d (t=%.2f)", radius, z, s2, s3, s4, t)
         return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
 

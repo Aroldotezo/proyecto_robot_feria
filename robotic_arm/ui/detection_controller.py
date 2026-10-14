@@ -134,9 +134,9 @@ class DetectionController(QObject):
         self._execute_pick_and_place(target)
 
     def _on_servo_debug(self) -> None:
-        """Secuencia de debug físico: todos los servos a 90°, espera 3 s, todos a 40°.
-        Permite verificar visualmente la dirección de cada servo sin necesidad de tracking.
-        """
+        
+        """Debug físico: solo S2, 90 -> 70 -> 50 -> 90, con los demás servos a 90°.
+        Si S2 decrece, el brazo debe inclinarse hacia adelante y BAJAR."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
@@ -144,15 +144,15 @@ class DetectionController(QObject):
             self.status_message.emit("⚠ Conecta el brazo primero (debug requiere conexión).")
             return
         self._arm_busy = True
-        self.status_message.emit("🔧 Debug: enviando todos los servos a 90°...")
+        self.status_message.emit("🔧 Debug S2: 90° → 70° → 50° → 90°. Observa si el brazo baja o sube.")
 
         def _run_debug() -> None:
             import time
             from robotic_arm.domain.camera.arm_position import ArmPosition
-            arm = self._arm_service._require_arm()  # acceso directo para debug
-            arm.move_to(ArmPosition((90, 90, 90, 90, 90, 90)))
-            time.sleep(3.0)
-            arm.move_to(ArmPosition((40, 40, 40, 40, 40, 40)))
+            arm = self._arm_service._require_arm()
+            for s2 in (90, 70, 50, 90):
+                arm.move_to(ArmPosition((90, s2, 90, 90, 90, 90)))
+                time.sleep(2.5)
 
         worker = Worker(_run_debug)
         worker.signals.finished.connect(self._on_debug_finished)
@@ -160,7 +160,7 @@ class DetectionController(QObject):
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
 
-        
+
 # robotic_arm/ui/detection_controller.py
     def _on_grasp_test(self) -> None:
         """Prueba física de GRASP: sobre el objeto -> bajar en vertical (IK) -> volver arriba, a r = 130 mm."""

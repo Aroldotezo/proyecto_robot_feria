@@ -19,42 +19,42 @@ class StepPose:
 class FallbackRoutineConfig:
     """Banco de poses por pasos para la rutina programada.
     
-    Convenio de servos (alineado con default_physical_config.py):
+    Convenio de servos (alineado con default_physical_config.py, S2↔S3 swappeados):
       S1: Base (60° = Inorgánico / 100° = Defectuoso / 140° = Orgánico)
-      S2: Hombro (DECRECE para bajar: 65° travel, 50° grasp, 40° drop)
-      S3: Codo (INCREMENTA para extender: 90° neutro, 92° agarre, 20° soltar en tolva)
+      S2: Codo (INCREMENTA para extender: 90° neutro, 92° agarre, 20° soltar en tolva)
+      S3: Hombro (DECRECE para bajar: 65° travel, 50° grasp, 40° drop)
       S4: Muñeca Pitch (180° = garra abajo)
       S5: Muñeca Roll (150° neutro)
       S6: Garra (30° abierta / 160° cerrada)
     """
 
     # --- 1. POSICIÓN DE REPOSO / HOME ---
-    home_pose: tuple[int, int, int, int, int, int] = (90, 65, 90, 180, 150, 30)
+    home_pose: tuple[int, int, int, int, int, int] = (90, 90, 65, 180, 150, 30)
 
     # --- 2. SECUENCIA DE AGARRE (PICK CENTRAL) ---
-    # S2 DECRECE para bajar: 65° = hover (arriba), 50° = contacto con residuo
-    pick_hover: tuple[int, int, int, int, int, int] = (90, 65, 90, 180, 150, 30)     # Sobre el residuo, garra abierta
-    pick_down: tuple[int, int, int, int, int, int] = (90, 50, 92, 180, 150, 30)      # Bajar a contacto
-    pick_grip: tuple[int, int, int, int, int, int] = (90, 50, 92, 180, 150, 160)     # Cerrar garra
-    pick_lift: tuple[int, int, int, int, int, int] = (90, 65, 90, 180, 150, 160)     # Subir con el residuo
+    # S2↔S3 intercambiados: S2=codo, S3=hombro
+    pick_hover: tuple[int, int, int, int, int, int] = (90, 90, 65, 180, 150, 30)     # Sobre el residuo, garra abierta
+    pick_down: tuple[int, int, int, int, int, int] = (90, 92, 50, 180, 150, 30)      # Bajar a contacto
+    pick_grip: tuple[int, int, int, int, int, int] = (90, 92, 50, 180, 150, 160)     # Cerrar garra
+    pick_lift: tuple[int, int, int, int, int, int] = (90, 90, 65, 180, 150, 160)     # Subir con el residuo
 
     # --- 3. DESTINO: ORGÁNICO (Tolva A, derecha: S1 = 140°) ---
-    drop_organic_travel: tuple[int, int, int, int, int, int] = (140, 65, 90, 180, 150, 160)    # Girar hacia tolva
-    drop_organic_down: tuple[int, int, int, int, int, int] = (140, 40, 20, 180, 150, 160)      # Bajar sobre tolva
-    drop_organic_release: tuple[int, int, int, int, int, int] = (140, 40, 20, 180, 150, 30)    # Abrir garra (soltar)
-    drop_organic_retract: tuple[int, int, int, int, int, int] = (140, 65, 90, 180, 150, 30)    # Elevar tras soltar
+    drop_organic_travel: tuple[int, int, int, int, int, int] = (140, 90, 65, 180, 150, 160)    # Girar hacia tolva
+    drop_organic_down: tuple[int, int, int, int, int, int] = (140, 20, 40, 180, 150, 160)      # Bajar sobre tolva
+    drop_organic_release: tuple[int, int, int, int, int, int] = (140, 20, 40, 180, 150, 30)    # Abrir garra (soltar)
+    drop_organic_retract: tuple[int, int, int, int, int, int] = (140, 90, 65, 180, 150, 30)    # Elevar tras soltar
 
     # --- 4. DESTINO: DEFECTUOSO (Tolva B, centro: S1 = 100°) ---
-    drop_defective_travel: tuple[int, int, int, int, int, int] = (100, 65, 90, 180, 150, 160)
-    drop_defective_down: tuple[int, int, int, int, int, int] = (100, 40, 20, 180, 150, 160)
-    drop_defective_release: tuple[int, int, int, int, int, int] = (100, 40, 20, 180, 150, 30)
-    drop_defective_retract: tuple[int, int, int, int, int, int] = (100, 65, 90, 180, 150, 30)
+    drop_defective_travel: tuple[int, int, int, int, int, int] = (100, 90, 65, 180, 150, 160)
+    drop_defective_down: tuple[int, int, int, int, int, int] = (100, 20, 40, 180, 150, 160)
+    drop_defective_release: tuple[int, int, int, int, int, int] = (100, 20, 40, 180, 150, 30)
+    drop_defective_retract: tuple[int, int, int, int, int, int] = (100, 90, 65, 180, 150, 30)
 
     # --- 5. DESTINO: INORGÁNICO (Tolva C, izquierda: S1 = 60°) ---
-    drop_inorganic_travel: tuple[int, int, int, int, int, int] = (60, 65, 90, 180, 150, 160)
-    drop_inorganic_down: tuple[int, int, int, int, int, int] = (60, 40, 20, 180, 150, 160)
-    drop_inorganic_release: tuple[int, int, int, int, int, int] = (60, 40, 20, 180, 150, 30)
-    drop_inorganic_retract: tuple[int, int, int, int, int, int] = (60, 65, 90, 180, 150, 30)
+    drop_inorganic_travel: tuple[int, int, int, int, int, int] = (60, 90, 65, 180, 150, 160)
+    drop_inorganic_down: tuple[int, int, int, int, int, int] = (60, 20, 40, 180, 150, 160)
+    drop_inorganic_release: tuple[int, int, int, int, int, int] = (60, 20, 40, 180, 150, 30)
+    drop_inorganic_retract: tuple[int, int, int, int, int, int] = (60, 90, 65, 180, 150, 30)
 
     # Tiempos de espera por defecto entre movimientos (en segundos)
     step_delay: float = 2.0

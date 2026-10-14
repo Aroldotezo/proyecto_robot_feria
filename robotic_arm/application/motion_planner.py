@@ -94,36 +94,24 @@ class MotionPlanner:
     # ------------------------------------------------------------------ poses
 
     def stage_at(self, radius: float, z: float, tool_pitch_deg: float = -90.0) -> ShoulderElbowPose:
-        """S2/S3/S4 para una posición a distancia `radius` (mm) y altura `z` (mm).
-
-        Modelo físico real:
-          - S2 es el DUEÑO del movimiento: DECREMENTA para ir hacia adelante (~55° cerca, ~48° lejos).
-          - S3 apenas se mueve: se queda en ~90° o sube 2-3° máximo para dar elevación.
-          - S4 = 180° fijo (garra apuntando hacia abajo).
-        """
         if radius < 90.0:
             raise ValueError(f"Objeto demasiado cerca de la base (r = {radius:.0f} mm)")
         if radius > 210.0:
-            raise ValueError(f"Objeto fuera del alcance físico del brazo (r = {radius:.0f} mm > 200 mm)")
+            raise ValueError(f"Objeto fuera del alcance físico del brazo (r = {radius:.0f} mm)")
 
-        # Progresión suave sobre el radio útil de la mesa (~110 mm a ~195 mm)
-        t = max(0.0, min(1.0, (radius - 110.0) / 85.0))
-        z_adj = max(0.0, min(8.0, (z - 10.0) * 0.3))
+        t = max(0.0, min(1.0, (radius - 110.0) / 85.0))   # 0 = cerca, 1 = lejos
 
-        # S2 DECREMENTA para alcanzar más lejos (cerca: ~55°, lejos: ~48°)
-        # S2 es el que mueve el brazo hacia adelante/atrás
-        s2 = int(round(55.0 - t * 7.0 + z_adj))
-        min_s2 = self._config.grasp_s2_min_limit  # 45° por CONTEXT.md
-        s2 = max(min_s2, min(60, s2))
+    # S3 da el alcance: INCREMENTA para extender (cerca ~100°, lejos ~118°)
+    # AJUSTAR estos dos valores con mediciones reales
+        s3_near, s3_far = 100, 118
+        s3 = int(round(s3_near + t * (s3_far - s3_near)))
 
-        # S3 APENAS SE MUEVE: se queda cerca de 90° (neutro)
-        # Solo sube 2-3° como máximo para dar un poquito más de elevación
-        s3 = int(round(90.0 + t * 3.0))
-        s3 = max(88, min(95, s3))
+    # S2 solo regula la altura, dentro de 50-60° (nunca < 45°)
+        z_adj = max(0.0, min(5.0, (z - 10.0) * 0.3))
+        s2 = int(round(52.0 + z_adj))
+        s2 = max(self._config.grasp_s2_min_limit, min(60, s2))
 
-        s4 = self._config.wrist_pitch_angle  # 180° garra apuntando derecho abajo
-        log.info("stage_at(r=%.0f, z=%.0f) → S2=%d, S3=%d, S4=%d  (t=%.2f)", radius, z, s2, s3, s4, t)
-        return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
+        return ShoulderElbowPose(s2=s2, s3=s3, s4=self._config.wrist_pitch_angle)
 
     def approach_stages(self, radius: float, grasp_z: float) -> tuple[ShoulderElbowPose, ShoulderElbowPose]:
         """(grasp, hover) en el mismo radio:

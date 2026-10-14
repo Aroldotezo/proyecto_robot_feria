@@ -71,12 +71,12 @@ class MotionPlanner:
         pick_s1 = self._safe_base_angle(arm_point, label="pick")
         drop_s1 = self._safe_drop_base_angle(category_id, destination)
 
-        # S2/S3/S4 salen de la cinemática inversa en el plano vertical del objeto (y=0: la base no cuenta aquí).
+        # S2 (con S3 fijo) y S4 salen de la cinemática en el plano vertical del objeto.
         radius = math.hypot(arm_point.x, arm_point.y)
         object_height = target_z if target_z is not None else 20.0
         grasp_z = max(10.0, 0.5 * object_height)  # agarra a media altura del objeto
-        grasp = self._stage_at(radius, grasp_z)
-        lift = self._stage_at(radius, grasp_z + _GRASP_LIFT_MM)
+        grasp = self.stage_at(radius, grasp_z)
+        lift = self.stage_at(radius, grasp_z + _GRASP_LIFT_MM)
 
         return self._build_sequence(pick_s1, drop_s1, grasp=grasp, lift=lift)
 
@@ -86,18 +86,19 @@ class MotionPlanner:
         return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
 
     def stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
-        """IK for a point `radius` mm from the base axis and `z` mm above the table.
-        An unreachable point is rejected: it must never fall back to a folded preset pose."""
+        """S2/S4 for a point `radius` mm from the base axis and `z` mm above the table, with S3 held at the
+        taught grasp elbow. An unreachable point is rejected: it must never fall back to a folded preset pose."""
+        elbow = self._config.grasp.s3
         try:
-            angles = self._kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
+            s2, s4 = self._kinematics.inverse_with_fixed_elbow(radius, z, elbow)
         except (UnreachablePointException, JointLimitException) as e:
             raise ValueError(f"Objeto fuera de alcance (r = {radius:.0f} mm, z = {z:.0f} mm): {e}") from e
-        s2, s3, s4 = angles[1], angles[2], angles[3]
         if s2 < self._config.grasp_s2_min_limit:
             raise ValueError(
                 f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
             )
-        return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
+        return ShoulderElbowPose(s2=s2, s3=elbow, s4=s4)
+
 
     def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
         """Full 6-servo pose. S4 keeps the tool pointing straight down unless the stage defines it."""

@@ -27,7 +27,7 @@ _WRIST_MIN, _WRIST_MAX = 0, 175  # S4 physical limits
 _HOVER_OFFSETS_MM = (50.0, 40.0, 30.0)  # heights above the grasp point to hover at, tried in order
 _TOOL_PITCHES_DEG = (-90.0, -80.0, -70.0, -60.0)  # -90 = vertical; tilts forward only when the reach needs it
 # Comfort zone: keep servos away from their stops, they stall and push against them there.
-_S3_MAX_COMFORT = 120
+_S3_MAX_COMFORT = 130
 _S4_MIN_COMFORT, _S4_MAX_COMFORT = 15, 160
 
 
@@ -95,7 +95,12 @@ class MotionPlanner:
 
     def stage_at(self, radius: float, z: float, tool_pitch_deg: float = -90.0) -> ShoulderElbowPose:
         """S2/S3/S4 para una posición a distancia `radius` (mm) y altura `z` (mm).
-        S2 y S3 decrementan para descender en vertical hacia el objeto; S4 se fija en 180° para apuntar abajo."""
+
+        Modelo físico validado (CONTEXT.md):
+          - S2 DECREMENTA para bajar el hombro (~55° cerca, ~50° lejos). Límite: 45°.
+          - S3 INCREMENTA para extender el codo hacia adelante (~100° cerca, ~115° lejos).
+          - S4 = 180° fijo (garra apuntando hacia abajo).
+        """
         if radius < 90.0:
             raise ValueError(f"Objeto demasiado cerca de la base (r = {radius:.0f} mm)")
         if radius > 210.0:
@@ -103,28 +108,31 @@ class MotionPlanner:
 
         # Progresión suave sobre el radio útil de la mesa (~110 mm a ~195 mm)
         t = max(0.0, min(1.0, (radius - 110.0) / 85.0))
-        z_adj = max(0.0, min(15.0, (z - 10.0) * 0.4))
+        z_adj = max(0.0, min(10.0, (z - 10.0) * 0.3))
 
-        # S2 decrementa para bajar el hombro hacia la mesa (cerca: ~50°, lejos: ~36°)
-        s2 = int(round(50.0 - t * 14.0 + z_adj))
-        min_s2 = getattr(self._config, "grasp_s2_min_limit", 32)
-        s2 = max(min_s2, min(58, s2))
+        # S2 decrementa para bajar el hombro hacia la mesa (cerca: ~55°, lejos: ~48°)
+        s2 = int(round(55.0 - t * 7.0 + z_adj))
+        min_s2 = self._config.grasp_s2_min_limit  # 45° por CONTEXT.md
+        s2 = max(min_s2, min(60, s2))
 
-        # S3 decrementa para bajar el codo hacia la mesa (cerca: ~78°, lejos: ~64°)
-        s3 = int(round(78.0 - t * 14.0 + z_adj * 0.5))
-        s3 = max(50, min(88, s3))
+        # S3 INCREMENTA para extender el codo hacia adelante (cerca: ~100°, lejos: ~115°)
+        s3 = int(round(100.0 + t * 15.0 - z_adj * 0.5))
+        s3 = max(95, min(120, s3))
 
         s4 = self._config.wrist_pitch_angle  # 180° garra apuntando derecho abajo
+        log.info("stage_at(r=%.0f, z=%.0f) → S2=%d, S3=%d, S4=%d  (t=%.2f)", radius, z, s2, s3, s4, t)
         return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
 
     def approach_stages(self, radius: float, grasp_z: float) -> tuple[ShoulderElbowPose, ShoulderElbowPose]:
         """(grasp, hover) en el mismo radio:
-        - HOVER: hombro elevado (S2 ≈ 58°–65°), codo neutro (S3 = 90°), garra abajo (S4 = 180°).
-        - GRASP: S2 y S3 decrementan al unísono para descender en vertical a la mesa."""
+        - HOVER: hombro elevado (S2 ≈ 65°), codo neutro (S3 = 90°), garra abajo (S4 = 180°).
+        - GRASP: S2 baja (~55°→48°), S3 sube (~100°→115°) → el brazo se extiende hacia adelante."""
         grasp = self.stage_at(radius, grasp_z)
-        hover_s2 = min(68, max(58, grasp.s2 + 16))
-        hover_s3 = 90
+        hover_s2 = min(70, max(60, grasp.s2 + 10))
+        hover_s3 = 90  # viaje = neutro
         hover = ShoulderElbowPose(s2=hover_s2, s3=hover_s3, s4=self._config.wrist_pitch_angle)
+        log.info("approach_stages(r=%.0f) → hover S2=%d/S3=%d, grasp S2=%d/S3=%d",
+                 radius, hover_s2, hover_s3, grasp.s2, grasp.s3)
         return grasp, hover
 
     def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:

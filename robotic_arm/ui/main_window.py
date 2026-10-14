@@ -106,6 +106,11 @@ class MainWindow(QMainWindow):
         sequence_panel = SequencePanel()
         detection_panel = DetectionPanel()
 
+        from robotic_arm.ui.fallback_routine_panel import FallbackRoutinePanel
+        from robotic_arm.application.fallback_routine_controller import FallbackRoutineController
+
+        fallback_panel = FallbackRoutinePanel()
+
         # Docks
         connection_dock = self._add_dock(
             "Conexion con el brazo",
@@ -127,10 +132,28 @@ class MainWindow(QMainWindow):
             self._scrollable(detection_panel),
         )
 
+        fallback_dock = self._add_dock(
+            "Rutina Demo (Fallback)",
+            self._scrollable(fallback_panel),
+        )
+
         self.tabifyDockWidget(connection_dock, calibration_dock)
         self.tabifyDockWidget(calibration_dock, sequence_dock)
         self.tabifyDockWidget(sequence_dock, detection_dock)
+        self.tabifyDockWidget(detection_dock, fallback_dock)
         detection_dock.raise_()
+
+        # Fallback Routine Controller
+        self._fallback_controller = FallbackRoutineController(
+            arm_service=arm_service,
+            parent=self,
+        )
+        fallback_panel.start_requested.connect(self._fallback_controller.start_routine)
+        fallback_panel.stop_requested.connect(self._fallback_controller.stop_routine)
+        self._fallback_controller.routine_state_changed.connect(fallback_panel.set_running)
+        self._fallback_controller.step_progress.connect(fallback_panel.set_step_progress)
+        self._fallback_controller.cycle_completed.connect(fallback_panel.set_cycle_count)
+        self._fallback_controller.status_message.connect(self.statusBar().showMessage)
 
         # Controllers
         self._connection_controller = ConnectionController(
@@ -190,6 +213,23 @@ class MainWindow(QMainWindow):
                 self._detection_controller.on_side_frame_available
             )
 
+        # Transmisión Web (WebSocket hacia Django en Render)
+        from robotic_arm.adapters.web_streamer import WebStreamer
+        self._web_streamer = WebStreamer(parent=self)
+        detection_panel.web_stream_toggled.connect(
+            lambda active: self._web_streamer.start() if active else self._web_streamer.stop()
+        )
+        self._web_streamer.status_changed.connect(
+            detection_panel.set_web_stream_status
+        )
+        self._web_streamer.streaming_toggled.connect(
+            detection_panel.set_web_streaming
+        )
+        # Bifurcar frames cenitales al streamer (cero impacto en YOLO)
+        self._camera_controller.top_frame_available.connect(
+            self._web_streamer.send_frame
+        )
+
         self._calibration_controller.test_point_changed.connect(
             self._sequence_controller.set_test_point
         )
@@ -232,6 +272,10 @@ class MainWindow(QMainWindow):
         self._camera_controller.refresh_cameras()
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt naming
+        if hasattr(self, "_fallback_controller") and self._fallback_controller is not None:
+            self._fallback_controller.stop_routine()
+        if hasattr(self, "_web_streamer") and self._web_streamer is not None:
+            self._web_streamer.stop()
         if self._detection_controller is not None:
             self._detection_controller.stop()
         self._camera_controller.stop()

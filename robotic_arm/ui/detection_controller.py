@@ -82,6 +82,17 @@ class DetectionController(QObject):
         panel.servo_drop_test_requested.connect(self._on_drop_test)
 
         self._latest_z: float = 15.0  # Altura por defecto en mm sobre la mesa
+        self._latest_frame = None
+
+        # Cliente REST para registrar detecciones en Django
+        from robotic_arm.adapters.detection_api_client import DetectionApiClient
+        self._api_client = DetectionApiClient(parent=self)
+        self._api_client.post_success.connect(
+            lambda obj, cat, conf: self.status_message.emit(f"☁ Detección enviada a la web: {obj} ({cat}) {int(conf*100)}%")
+        )
+        self._api_client.post_failed.connect(
+            lambda err: log.warning("Fallo al registrar detección en API web: %s", err)
+        )
 
     # -------------------------------------------------------------- public
 
@@ -108,6 +119,7 @@ class DetectionController(QObject):
         """Called from the camera controller when a new frame is available.
         If a detection cycle is already running, the frame is dropped (latest-only semantics).
         """
+        self._latest_frame = frame
         if self._processing:
             return
         self._processing = True
@@ -357,6 +369,10 @@ class DetectionController(QObject):
 
         # Update panel info
         self._panel.set_detection_info(self._format_info(infos, tracked_info))
+
+        # Registro automático en la API Web (con cooldown) para el objeto dentro de la zona de evaluación
+        if tracked_info is not None and tracked_info.detection is not None:
+            self._api_client.try_log_detection(tracked_info.detection, frame=self._latest_frame)
 
         # Arm tracking logic
         if (

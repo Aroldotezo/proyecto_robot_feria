@@ -161,36 +161,32 @@ class DetectionController(QObject):
         QThreadPool.globalInstance().start(worker)
 
     def _on_grasp_test(self) -> None:
-        """Prueba física de GRASP: sobre el objeto -> bajar en vertical (IK) -> volver arriba, a r = 130 mm."""
+        """Test DIRECTO: S2 decrementa paso a paso (90→65→55→50) con S3=90 fijo.
+        Si el brazo va hacia ADELANTE, S2 decreciente = correcto.
+        Si se encoge/retrae, hay un problema de hardware o firmware."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
         if not self._arm_service.connected:
             self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
             return
-        radius, grasp_z = 130.0, 20.0
-        try:
-            grasp, hover = self._planner.approach_stages(radius, grasp_z)
-        except ValueError as e:
-            self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
-            return
         self._arm_busy = True
-        opened = self._planner.config.gripper_open_angle
-        hover_pose = self._planner.build_pose(90, hover, opened)
-        grasp_pose = self._planner.build_pose(90, grasp, opened)
         self.status_message.emit(
-            f"⤵ Probando GRASP (r={radius:.0f} mm): arriba S2/S3/S4 = {hover.s2}/{hover.s3}/{hover.s4}° "
-            f"→ abajo {grasp.s2}/{grasp.s3}/{grasp.s4}°"
+            "🔧 TEST DIRECTO S2: 90→65→55→50→55→65→90 (S3=90 fijo, S4=180, S5=150, S6=30). "
+            "Observa si el brazo va hacia ADELANTE cuando S2 baja."
         )
 
         def _run_grasp() -> None:
             import time
+            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
-            arm.move_to(hover_pose)
-            time.sleep(2.0)
-            arm.move_to(grasp_pose)
-            time.sleep(3.0)
-            arm.move_to(hover_pose)
+            # Secuencia fija sin cálculos: S2 decrementa, todo lo demás fijo
+            # S1=90(centro), S3=90(neutro), S4=180(garra abajo), S5=150, S6=30(abierta)
+            for s2 in (90, 65, 55, 50, 55, 65, 90):
+                pose = ArmPosition((90, s2, 90, 180, 150, 30))
+                log.info(">>> TEST DIRECTO: enviando S2=%d  (pose completa: %s)", s2, pose.angles)
+                arm.move_to(pose)
+                time.sleep(2.5)
 
         worker = Worker(_run_grasp)
         worker.signals.finished.connect(self._on_arm_finished)

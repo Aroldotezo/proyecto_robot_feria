@@ -134,7 +134,7 @@ class DetectionController(QObject):
         self._execute_pick_and_place(target)
 
     def _on_servo_debug(self) -> None:
-        
+
         """Debug físico: solo S2, 90 -> 70 -> 50 -> 90, con los demás servos a 90°.
         Si S2 decrece, el brazo debe inclinarse hacia adelante y BAJAR."""
         if self._arm_busy:
@@ -172,8 +172,7 @@ class DetectionController(QObject):
             return
         radius, grasp_z = 130.0, 20.0
         try:
-            grasp = self._planner.stage_at(radius, grasp_z)
-            hover = self._planner.hover_stage_at(radius, grasp_z)
+            grasp, hover = self._planner.approach_stages(radius, grasp_z)
         except ValueError as e:
             self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
             return

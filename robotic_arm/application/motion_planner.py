@@ -1,5 +1,6 @@
 import logging
 import math
+from dataclasses import replace
 
 from robotic_arm.application.calibration_service import CalibrationService
 from robotic_arm.domain.camera.arm_position import ArmPosition
@@ -23,7 +24,11 @@ log = logging.getLogger(__name__)
 _EVAL_ZONE_MARGIN = 0.02
 
 _WRIST_MIN, _WRIST_MAX = 0, 175  # S4 physical limits
-_HOVER_OFFSETS_MM = (60.0, 45.0, 30.0)  # heights above the grasp point to hover at, tried in order
+_HOVER_OFFSETS_MM = (50.0, 40.0, 30.0)  # heights above the grasp point to hover at, tried in order
+_TOOL_PITCHES_DEG = (-90.0, -80.0, -70.0, -60.0)  # -90 = vertical; tilts forward only when the reach needs it
+# Comfort zone: keep servos away from their stops, they stall and push against them there.
+_S3_MAX_COMFORT = 120
+_S4_MIN_COMFORT, _S4_MAX_COMFORT = 15, 160
 
 
 class MotionPlanner:
@@ -83,17 +88,19 @@ class MotionPlanner:
         object_height = target_z if target_z is not None else 20.0
         grasp_z = max(10.0, 0.5 * object_height)  # agarra a media altura del objeto
         grasp = self.stage_at(radius, grasp_z)
-        hover = self.hover_stage_at(radius, grasp_z)
+        grasp, hover = self.approach_stages(radius, grasp_z)
 
         return self._build_sequence(pick_s1, drop_s1, grasp=grasp, hover=hover)
 
     # ------------------------------------------------------------------ poses
 
-    def stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
-        """S2/S3/S4 for a point `radius` mm from the base axis and `z` mm above the table, tool pointing down.
-        An unreachable point is rejected: it must never fall back to a folded preset pose."""
+    def stage_at(self, radius: float, z: float, tool_pitch_deg: float = -90.0) -> ShoulderElbowPose:
+        """S2/S3/S4 for a point `radius` mm from the base axis and `z` mm above the table, with the tool at
+        `tool_pitch_deg` (-90 = straight down). A pose that is unreachable or that would push a servo against
+        its stop is rejected: it must never fall back to a folded or stalled preset pose."""
+        kinematics = ArmKinematics(replace(self._kinematics.model, tool_pitch_deg=tool_pitch_deg))
         try:
-            angles = self._kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
+            angles = kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
         except (UnreachablePointException, JointLimitException) as e:
             raise ValueError(f"Objeto fuera de alcance (r = {radius:.0f} mm, z = {z:.0f} mm): {e}") from e
         s2, s3, s4 = angles[1], angles[2], angles[3]
@@ -101,18 +108,27 @@ class MotionPlanner:
             raise ValueError(
                 f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
             )
+        if s3 > _S3_MAX_COMFORT or not _S4_MIN_COMFORT <= s4 <= _S4_MAX_COMFORT:
+            raise ValueError(f"Postura al límite de los servos (S3 = {s3}°, S4 = {s4}°) a r = {radius:.0f} mm")
         return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
 
-    def hover_stage_at(self, radius: float, grasp_z: float) -> ShoulderElbowPose:
-        """Same radius as the grasp, higher up: the arm comes down (or goes back up) in a straight vertical line.
-        Tries the highest hover that is reachable, so a far object still gets a shorter, valid hover."""
+    def approach_stages(self, radius: float, grasp_z: float) -> tuple[ShoulderElbowPose, ShoulderElbowPose]:
+        """(grasp, hover) at the same radius and the same tool pitch, so the arm goes straight down and up.
+        The tool stays vertical when it can and tilts forward only as much as the reach requires."""
         last_error: ValueError | None = None
-        for offset in _HOVER_OFFSETS_MM:
+        for pitch in _TOOL_PITCHES_DEG:
             try:
-                return self.stage_at(radius, grasp_z + offset)
+                grasp = self.stage_at(radius, grasp_z, pitch)
             except ValueError as e:
                 last_error = e
-        raise ValueError(f"No hay una altura de aproximación alcanzable sobre el objeto: {last_error}")
+                continue
+            for offset in _HOVER_OFFSETS_MM:
+                try:
+                    return grasp, self.stage_at(radius, grasp_z + offset, pitch)
+                except ValueError as e:
+                    last_error = e
+        raise ValueError(f"Objeto fuera de alcance cómodo del brazo (r = {radius:.0f} mm): {last_error}")
+
 
     def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
         """Full 6-servo pose. S4 keeps the tool pointing straight down unless the stage defines it."""

@@ -160,8 +160,6 @@ class DetectionController(QObject):
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
 
-
-# robotic_arm/ui/detection_controller.py
     def _on_grasp_test(self) -> None:
         """Prueba física de GRASP: sobre el objeto -> bajar en vertical (IK) -> volver arriba, a r = 130 mm."""
         if self._arm_busy:

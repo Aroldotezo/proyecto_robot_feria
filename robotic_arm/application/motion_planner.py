@@ -87,7 +87,6 @@ class MotionPlanner:
         radius = math.hypot(arm_point.x, arm_point.y)
         object_height = target_z if target_z is not None else 20.0
         grasp_z = max(10.0, 0.5 * object_height)  # agarra a media altura del objeto
-        grasp = self.stage_at(radius, grasp_z)
         grasp, hover = self.approach_stages(radius, grasp_z)
 
         return self._build_sequence(pick_s1, drop_s1, grasp=grasp, hover=hover)
@@ -95,50 +94,43 @@ class MotionPlanner:
     # ------------------------------------------------------------------ poses
 
     def stage_at(self, radius: float, z: float, tool_pitch_deg: float = -90.0) -> ShoulderElbowPose:
-        """S2/S3/S4 for a point `radius` mm from the base axis and `z` mm above the table, with the tool at
-        `tool_pitch_deg` (-90 = straight down). A pose that is unreachable or that would push a servo against
-        its stop is rejected: it must never fall back to a folded or stalled preset pose."""
-        kinematics = ArmKinematics(replace(self._kinematics.model, tool_pitch_deg=tool_pitch_deg))
-        try:
-            angles = kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
-        except (UnreachablePointException, JointLimitException) as e:
-            raise ValueError(f"Objeto fuera de alcance (r = {radius:.0f} mm, z = {z:.0f} mm): {e}") from e
-        s2, s3, s4 = angles[1], angles[2], angles[3]
-        if s2 < self._config.grasp_s2_min_limit:
-            raise ValueError(
-                f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
-            )
-        if s3 > _S3_MAX_COMFORT or not _S4_MIN_COMFORT <= s4 <= _S4_MAX_COMFORT:
-            raise ValueError(f"Postura al límite de los servos (S3 = {s3}°, S4 = {s4}°) a r = {radius:.0f} mm")
+        """S2/S3/S4 para una posición a distancia `radius` (mm) y altura `z` (mm).
+        S2 y S3 decrementan para descender en vertical hacia el objeto; S4 se fija en 180° para apuntar abajo."""
+        if radius < 90.0:
+            raise ValueError(f"Objeto demasiado cerca de la base (r = {radius:.0f} mm)")
+        if radius > 210.0:
+            raise ValueError(f"Objeto fuera del alcance físico del brazo (r = {radius:.0f} mm > 200 mm)")
+
+        # Progresión suave sobre el radio útil de la mesa (~110 mm a ~195 mm)
+        t = max(0.0, min(1.0, (radius - 110.0) / 85.0))
+        z_adj = max(0.0, min(15.0, (z - 10.0) * 0.4))
+
+        # S2 decrementa para bajar el hombro hacia la mesa (cerca: ~50°, lejos: ~36°)
+        s2 = int(round(50.0 - t * 14.0 + z_adj))
+        min_s2 = getattr(self._config, "grasp_s2_min_limit", 32)
+        s2 = max(min_s2, min(58, s2))
+
+        # S3 decrementa para bajar el codo hacia la mesa (cerca: ~78°, lejos: ~64°)
+        s3 = int(round(78.0 - t * 14.0 + z_adj * 0.5))
+        s3 = max(50, min(88, s3))
+
+        s4 = self._config.wrist_pitch_angle  # 180° garra apuntando derecho abajo
         return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
 
     def approach_stages(self, radius: float, grasp_z: float) -> tuple[ShoulderElbowPose, ShoulderElbowPose]:
-        """(grasp, hover) at the same radius and the same tool pitch, so the arm goes straight down and up.
-        The tool stays vertical when it can and tilts forward only as much as the reach requires."""
-        last_error: ValueError | None = None
-        for pitch in _TOOL_PITCHES_DEG:
-            try:
-                grasp = self.stage_at(radius, grasp_z, pitch)
-            except ValueError as e:
-                last_error = e
-                continue
-            for offset in _HOVER_OFFSETS_MM:
-                try:
-                    return grasp, self.stage_at(radius, grasp_z + offset, pitch)
-                except ValueError as e:
-                    last_error = e
-        raise ValueError(f"Objeto fuera de alcance cómodo del brazo (r = {radius:.0f} mm): {last_error}")
-
+        """(grasp, hover) en el mismo radio:
+        - HOVER: hombro elevado (S2 ≈ 58°–65°), codo neutro (S3 = 90°), garra abajo (S4 = 180°).
+        - GRASP: S2 y S3 decrementan al unísono para descender en vertical a la mesa."""
+        grasp = self.stage_at(radius, grasp_z)
+        hover_s2 = min(68, max(58, grasp.s2 + 16))
+        hover_s3 = 90
+        hover = ShoulderElbowPose(s2=hover_s2, s3=hover_s3, s4=self._config.wrist_pitch_angle)
+        return grasp, hover
 
     def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
-        """Full 6-servo pose. S4 keeps the tool pointing straight down unless the stage defines it."""
-        s4 = stage.s4 if stage.s4 is not None else self._vertical_wrist(stage.s2, stage.s3)
+        """Full 6-servo pose. S4 mantiene la garra apuntando hacia abajo (180°)."""
+        s4 = stage.s4 if stage.s4 is not None else self._config.wrist_pitch_angle
         return ArmPosition((s1, stage.s2, stage.s3, s4, self._config.wrist_roll_angle, gripper))
-
-    @staticmethod
-    def _vertical_wrist(s2: int, s3: int) -> int:
-        """S4 that keeps the tool pointing straight down for a given S2/S3 (checked against the taught pose 60/50/70)."""
-        return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
 
     # ------------------------------------------------------------------ base angle
 

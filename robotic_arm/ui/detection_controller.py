@@ -161,37 +161,41 @@ class DetectionController(QObject):
         QThreadPool.globalInstance().start(worker)
 
     def _on_grasp_test(self) -> None:
-        """Prueba física directa de la postura GRASP (aproximación hacia la mesa)."""
+        """Prueba física de GRASP: travel -> pose calculada por IK a un radio fijo -> travel."""
         if self._arm_busy:
             self.status_message.emit("⚠ El brazo ya está ocupado, espera a que termine.")
             return
         if not self._arm_service.connected:
             self.status_message.emit("⚠ Conecta el brazo primero para probar posiciones.")
             return
-        self._arm_busy = True
         config = self._planner.config
-        grasp = config.grasp
+        try:
+            grasp = self._planner.stage_at(radius=120.0, z=20.0)
+        except ValueError as e:
+            self.status_message.emit(f"⚠ No se puede calcular el grasp de prueba: {e}")
+            return
+        self._arm_busy = True
         travel = config.travel
-        self.status_message.emit(f"⤵ Probando GRASP: Travel (S2={travel.s2}°, S3={travel.s3}°) → Grasp (S2={grasp.s2}°, S3={grasp.s3}°)")
+        opened = config.gripper_open_angle
+        travel_pose = self._planner.build_pose(90, travel, opened)
+        grasp_pose = self._planner.build_pose(90, grasp, opened)
+        self.status_message.emit(f"⤵ Probando GRASP (r=120 mm): S2={grasp.s2}°, S3={grasp.s3}°, S4={grasp_pose.angles[3]}°")
 
         def _run_grasp() -> None:
             import time
-            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
-            # 1. Travel pose inicial
-            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(travel_pose)
             time.sleep(2.0)
-            # 2. Bajar a Grasp
-            arm.move_to(ArmPosition((90, grasp.s2, grasp.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(grasp_pose)
             time.sleep(3.0)
-            # 3. Volver a Travel
-            arm.move_to(ArmPosition((90, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(travel_pose)
 
         worker = Worker(_run_grasp)
         worker.signals.finished.connect(self._on_arm_finished)
         worker.signals.failed.connect(self._on_arm_failed)
         from PySide6.QtCore import QThreadPool
         QThreadPool.globalInstance().start(worker)
+
 
     def _on_drop_test(self) -> None:
         """Prueba física directa de la postura DROP (soltado en zona destino)."""
@@ -206,23 +210,25 @@ class DetectionController(QObject):
         drop = config.drop
         travel = config.travel
         drop_s1 = config.drop_base_angles.get("defective", 100)
-        self.status_message.emit(f"⤴ Probando DROP (S1={drop_s1}°, S2={drop.s2}°, S3={drop.s3}°)")
+        pose = self._planner.build_pose
+        closed, opened = config.gripper_closed_angle, config.gripper_open_angle
+        drop_s4 = pose(drop_s1, drop, closed).angles[3]
+        self.status_message.emit(f"⤴ Probando DROP (S1={drop_s1}°, S2={drop.s2}°, S3={drop.s3}°, S4={drop_s4}°)")
 
         def _run_drop() -> None:
             import time
-            from robotic_arm.domain.camera.arm_position import ArmPosition
             arm = self._arm_service._require_arm()
             # 1. Travel al centro de drop
-            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            arm.move_to(pose(drop_s1, travel, closed))
             time.sleep(2.0)
             # 2. Bajar a drop
-            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_closed_angle)))
+            arm.move_to(pose(drop_s1, drop, closed))
             time.sleep(2.0)
             # 3. Abrir garra
-            arm.move_to(ArmPosition((drop_s1, drop.s2, drop.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(pose(drop_s1, drop, opened))
             time.sleep(1.5)
             # 4. Volver a Travel
-            arm.move_to(ArmPosition((drop_s1, travel.s2, travel.s3, config.wrist_pitch_angle, config.wrist_roll_angle, config.gripper_open_angle)))
+            arm.move_to(pose(drop_s1, travel, opened))
 
         worker = Worker(_run_drop)
         worker.signals.finished.connect(self._on_arm_finished)

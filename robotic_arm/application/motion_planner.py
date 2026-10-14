@@ -14,6 +14,8 @@ from robotic_arm.domain.zone import Zone
 from robotic_arm.domain.arm_kinematics import ArmKinematics
 from robotic_arm.domain.arm_space import ArmPoint, ArmWaypoint
 
+from robotic_arm.application.default_arm_model import create_default_arm_model
+
 log = logging.getLogger(__name__)
 
 # Margen de tolerancia (2 %) al verificar si el objeto está dentro de la zona de evaluación.
@@ -35,7 +37,7 @@ class MotionPlanner:
     ) -> None:
         self._calibration = calibration
         self._config = config
-        self._kinematics = kinematics
+        self._kinematics = kinematics or ArmKinematics(create_default_arm_model())
 
     @property
     def config(self) -> PhysicalArmConfig:
@@ -83,11 +85,9 @@ class MotionPlanner:
         """S4 that keeps the tool pointing straight down for a given S2/S3 (checked against the taught pose 60/50/70)."""
         return max(_WRIST_MIN, min(_WRIST_MAX, 180 - s2 - s3))
 
-    def _stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
-        """Inverse kinematics for a point at `radius` mm from the base axis and `z` mm above the table.
+    def stage_at(self, radius: float, z: float) -> ShoulderElbowPose:
+        """IK for a point `radius` mm from the base axis and `z` mm above the table.
         An unreachable point is rejected: it must never fall back to a folded preset pose."""
-        if self._kinematics is None:
-            raise ValueError("Sin cinemática configurada no se puede calcular el alcance")
         try:
             angles = self._kinematics.inverse(ArmWaypoint(radius, 0.0, z)).angles
         except (UnreachablePointException, JointLimitException) as e:
@@ -98,6 +98,11 @@ class MotionPlanner:
                 f"Objeto demasiado lejos (r = {radius:.0f} mm): S2 = {s2}° bajaría de {self._config.grasp_s2_min_limit}°"
             )
         return ShoulderElbowPose(s2=s2, s3=s3, s4=s4)
+
+    def build_pose(self, s1: int, stage: ShoulderElbowPose, gripper: int) -> ArmPosition:
+        """Full 6-servo pose. S4 keeps the tool pointing straight down unless the stage defines it."""
+        s4 = stage.s4 if stage.s4 is not None else self._vertical_wrist(stage.s2, stage.s3)
+        return ArmPosition((s1, stage.s2, stage.s3, s4, self._config.wrist_roll_angle, gripper))
 
 
     def base_angle_for(self, point: ArmPoint) -> int:
